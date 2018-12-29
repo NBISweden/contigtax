@@ -11,11 +11,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 import os
 import urllib.request
-import ftplib
-import hashlib
 import sys
 from Bio.SeqIO import parse
 import gzip as gz
@@ -24,6 +21,52 @@ from collections import defaultdict
 import subprocess
 import tarfile
 import time
+from glob import glob
+
+
+def build_diamond_db(args):
+    """Runs diamond makedb
+
+    Builds a diamond database with taxonomy id mappings"""
+    fastadir = os.path.dirname(args.fastafile)
+    if not args.dbfile:
+        dbfile = "{}/diamond.dmnd".format(fastadir)
+    else:
+        dbfile = args.dbfile
+    subprocess.run('gunzip -c {fastafile} | diamond makedb --taxonmap {taxonmap} --taxonnodes {taxonnodes} \
+                          -d {dbfile} -p {threads}'.format(fastafile=args.fastafile, taxonmap=args.taxonmap,
+                                                           taxonnodes=args.taxonnodes, dbfile=dbfile,
+                                                           threads=args.threads), shell=True)
+    return 0
+
+def download_nr_idmap(args):
+    """Downloads the nr protein to taxonomy id map"""
+    if not args.dldir:
+        dldir = "./nr"
+    else:
+        dldir = args.dldir
+    if not os.path.exists(dldir):
+        os.makedirs(dldir)
+    if not args.tmpdir:
+        tmpdir = dldir
+    else:
+        tmpdir = args.tmpdir
+        if not os.path.exists(tmpdir):
+            os.makedirs(tmpdir)
+    if os.path.exists(os.path.join(dldir,"prot.accession2taxid.gz")):
+        if args.force:
+            sys.stderr.write("Re-downloading idmap because force=True\n")
+            pass
+        else:
+            sys.stderr.write("{}/prot.accession2taxid.gz already exists. Force download with '-f'\n".format(dldir))
+            return 0
+    url = "ftp://ftp.ncbi.nih.gov/pub/taxonomy/accession2taxid/prot.accession2taxid.gz"
+    _local = "{}/prot.accession2taxid.gz".format(tmpdir)
+    local = "{}/prot.accession2taxid.gz".format(dldir)
+    sys.stderr.write("Downloading prot.accession2taxid.gz to {}\n".format(dldir))
+    urllib.request.urlretrieve(url, _local, reporthook=progress)
+    move(_local, local)
+    return 0
 
 
 def download_ncbi_taxonomy(args):
@@ -91,7 +134,7 @@ def progress(count, blocksize, totalsize):
     percent = "{}{}{}".format((3-l)*" ", percent, (2-d)*"0")
     # Calculate Mb downloaded so far and format string output
     mb = round(count*blocksize/(1024**2), 2)
-    total_mb = round(totalsize / 1024)
+    total_mb = round(totalsize / (1024**2), 2)
     t = len(str(total_mb))
     l, d = len(str(mb).split(".")[0]), len(str(mb).split(".")[1])
     mb = "{}{}".format(mb, (2-d)*"0")
@@ -137,6 +180,7 @@ def download_fasta(args):
         urllib.request.urlretrieve(url_release_note, release_note)
     elif args.db == "nr":
         url = "ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz"
+        idmap_url = "ftp://ftp.ncbi.nih.gov/pub/taxonomy/accession2taxid/prot.accession2taxid.gz"
         with open(release_note, 'w') as fhout:
             timestamp = time.asctime(time.gmtime())
             fhout.write("Downloaded {}\n".format(timestamp))
@@ -145,6 +189,11 @@ def download_fasta(args):
     if dl:
         sys.stderr.write("Downloading {} to {}\n".format(url, tmp_fasta))
         urllib.request.urlretrieve(url, tmp_fasta, reporthook=progress)  # Download the fasta
+        if args.db == "nr" and not args.skip_idmap:
+            _idmap = "{}/prot.accession2taxid.gz".format(os.path.expandvars(tmpdir))
+            idmap = "{}/prot.accession2taxid.gz".format(dldir)
+            urllib.request.urlretrieve(idmap_url, _idmap, reporthook=progress)  # Download the nr idmap
+            move(_idmap, idmap)
         move(tmp_fasta, fasta)  # Move fasta from temporary directory
         sys.stderr.write("Download complete\n")
         # Check integrity
@@ -160,12 +209,14 @@ def download_fasta(args):
 
 
 def move(src, target):
+    """Moves file if source and target are different"""
     if src == target:
         return
     shutil.move(src, target)
 
 
 def read_relase_notes(f):
+    """Attempts to extract total number of sequences from relase notes"""
     with open(f, 'r') as fhin:
         for line in fhin:
             line = line.rstrip().lstrip()
@@ -183,6 +234,7 @@ def zip_file(src, target):
 
 
 def progress_msg(i, n):
+    """Writes a progress status message for reformatting"""
     if i % 1000 == 0:
         if n > 0:
             p = (float(i) / n) * 100
@@ -193,8 +245,9 @@ def progress_msg(i, n):
         sys.stdout.flush()
 
 
-def parse_seqid(record, db):
-    if "uniref" in db:
+def parse_seqid(record):
+    """Parses sequence and taxids from fasta"""
+    if "UniRef" in record.id:
         newid = (record.id).split("_")[-1]  # Remove the 'UniRefxx_' string
         taxid = [x.split("=")[1] for x in (record.description).split(" ") if "TaxID" in x][0]
         return newid, taxid
@@ -202,74 +255,91 @@ def parse_seqid(record, db):
         return record.id, None
 
 
+def setup_format_dirs(args):
+    """Checks what directories and files to create for formatting"""
+    fastadir = os.path.dirname(args.fastafile)
+    formatdir = os.path.dirname(args.reformatted)
+    if not os.path.exists(formatdir):
+        os.makedirs(formatdir)
+    if not args.tmpdir:
+        tmpdir = formatdir
+    tmpdir = os.path.expandvars(tmpdir)
+    if not os.path.exists(tmpdir):
+        os.makedirs(tmpdir)
+    rn_glob = glob("{}/*.release_note".format(fastadir))
+    if len(rn_glob) > 0:
+        n = read_relase_notes(rn_glob[0])
+    else:
+        n = 0
+    return formatdir, tmpdir, n
+
+
+def write_idmap(s, fhidmap):
+    if fhidmap:
+        fhidmap.write(s.encode())
+    return
+
+
 def format_fasta(args):
-    """Reformats a protein fasta file by stripping 'UniRef_' prefix and outputs taxidmap
+    """Reformats a protein fasta file and outputs taxidmap
 
     Because diamond makedb requires protein accessions to be at most 14 characters
-    this function strips the 'UniRefxx_' prefix from all protein ids.
+    this function forces sequence ids to conform to this length.
 
     Taxonomy Ids are also parsed from (UniRef) fasta headers and written to idmap.gz in the format used by NCBI
     for the prot.accession2taxid.gz file.
     """
-    fastadir = ""
-    if not os.path.exists(dldir):
-        os.makedirs(dldir)
-    if not args.tmpdir:
-        tmpdir = dldir
-    tmpdir = os.path.expandvars(tmpdir)
-    if not os.path.exists(tmpdir):
-        os.makedirs(tmpdir)
-    release_notes = "{}/{}.release_note".format(dldir, args.db)
-    if os.path.exists(release_notes):
-        n = read_relase_notes(release_notes)
-    else:
-        n = 0
+    if os.path.exists(args.reformatted) and not args.force:
+        sys.stderr.write("{} already exists. Specify '-f' to force overwrite\n".format(args.reformatted))
+        return 0
+    formatdir, tmpdir, n = setup_format_dirs(args)
     # Fasta and reformatted fasta files
-    fasta = "{}/{}.fasta.gz".format(dldir, args.db)
-    fasta_r = "{}/{}.reformat.fasta.gz".format(dldir, args.db)
-    _fasta_r = "{}/{}.reformat.fasta.gz".format(tmpdir, args.db)
+    _fasta_r = "{}/{}".format(tmpdir, os.path.basename(args.reformatted))
     # Mapping file with protein accessions to taxids
-    mapfile = "{}/prot.accession2taxid.gz".format(dldir)
-    _mapfile = "{}/prot.accession2taxid.gz".format(tmpdir)
-    # Counts file with number of proteins per taxid
-    countsfile = "{}/taxoncounts.tsv.gz".format(dldir)
-    _countsfile = "{}/taxoncounts.tsv.gz".format(tmpdir)
-    taxoncounts = defaultdict(int)
-    # IDmap dictionary for ids that are longer than 14 characters
+    if not args.taxidmap:
+        mapfile = "{}/prot.accession2taxid.gz".format(formatdir)
+        _mapfile = "{}/prot.accession2taxid.gz".format(tmpdir)
+    else:
+        mapfile = args.taxidmap
+        _mapfile = "{}/{}".format(tmpdir, os.path.basename(args.taxidmap))
+    if args.forceidmap or not os.path.exists(mapfile):
+        fhidmap = gz.open(_mapfile, 'wb')
+    else:
+        sys.stderr.write("{} already exists.\n".format(mapfile))
+        fhidmap = False
+    # IDmap dictionary for ids that are longer than --maxidlen characters
     idmap = {}
+    idmapfile = "{}/idmap.tsv.gz".format(formatdir)
     _idmapfile = "{}/idmap.tsv.gz".format(tmpdir)
-    idmapfile = "{}/idmap.tsv.gz".format(dldir)
     j = 1
-    sys.stderr.write("Reformatting {}\n".format(fasta))
-    with gz.open(fasta, 'rt') as fhin, gz.open(_mapfile, 'wb') as fhidmap, gz.open(_fasta_r, 'wb') as fhreformat:
-        idmap_string = "{}\t{}\t{}\t{}\n".format("accession","accession_version","taxid","gi")
-        fhidmap.write(idmap_string.encode())
-        for i, record in enumerate(parse(fhin, "fasta"), start=0):
+    uniref = False
+    sys.stderr.write("Reformatting {}\n".format(args.fastafile))
+    with gz.open(args.fastafile, 'rt') as fhin, gz.open(_fasta_r, 'wb') as fhreformat:
+        idmap_string = "{}\t{}\t{}\t{}\n".format("accession", "accession.version", "taxid", "gi")
+        write_idmap(idmap_string, fhidmap)
+        for i, record in enumerate(parse(fhin, "fasta"), start=1):
             progress_msg(i, n)  # Handle progress report output
-            newid, taxid = parse_seqid(record, args.db)
-            if "uniref" in args.db:
-                taxoncounts[taxid]+=1  # Count taxids
-                idmap_string = "{}\t{}\t{}\t{}\n".format(newid, newid, taxid, newid)  # Write newid to taxid mapping
-                fhidmap.write(idmap_string.encode())
+            newid, taxid = parse_seqid(record)
             if len(newid) > args.maxidlen:
                 newid = "id{j}".format(j=j)
                 idmap[record.id] = newid
                 j += 1
+            if taxid:  # If a taxid is returned we can assume we are dealing with UniRef fasta
+                uniref = True
+                idmap_string = "{}\t{}\t{}\t{}\n".format(newid, newid, taxid, newid)  # Write newid to taxid mapping
+                write_idmap(idmap_string, fhidmap)
             fasta_string = ">{}\n{}\n".format(newid, str(record.seq))  # Write record with new id
             fhreformat.write(fasta_string.encode())
-    if "uniref" in args.db:
-        # Write taxon counts
-        with gz.open(_countsfile, 'wb') as fhout:
-            for taxid, taxcount in taxoncounts.items():
-                s = "{}\t{}\n".format(taxid, taxcount)
-                fhout.write(s.encode())
-        move(_countsfile, countsfile)
+    sys.stderr.write("{}/{} records parsed\n".format(i, i))
+    if uniref:
         move(_mapfile, mapfile)
-    move(_fasta_r, fasta_r)
+    move(_fasta_r, args.reformatted)
     if len(idmap.keys()) > 0:
         with gz.open(_idmapfile, 'wb') as fhout:
             for old, new in idmap.items():
                 line = "{}\t{}\n".format(old, new)
                 fhout.write(line.encode())
         move(_idmapfile, idmapfile)
-    return 0
+        sys.stderr.write("{}/{} sequence ids longer than {} characters written to {}\n".format(len(idmap), i,
+                                                                                               args.maxidlen, idmapfile))
+    return idmap
