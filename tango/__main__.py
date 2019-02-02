@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
@@ -12,9 +13,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from argparse import ArgumentParser
-from prepare import download_fasta, download_ncbi_taxonomy, download_nr_idmap
-from prepare import format_fasta, update_idmap, build_diamond_db
-from search import diamond
+from tango import prepare
+from tango import search
 
 __version__ = '0.0.1'
 
@@ -22,11 +22,11 @@ __version__ = '0.0.1'
 def download(args):
     """Handles downloading (fasta and NCBI taxonomy)"""
     if args.db == "taxonomy":
-        download_ncbi_taxonomy(args)
+        prepare.download_ncbi_taxonomy(args)
     elif args.db == "idmap":
-        download_nr_idmap(args)
+        prepare.download_nr_idmap(args)
     else:
-        download_fasta(args)
+        prepare.download_fasta(args)
 
 
 def reformat(args):
@@ -37,21 +37,21 @@ def reformat(args):
     2. nodes.dmp and names.dmp must be supplied
     3. a prot.accession2taxid.gz file mapping protein ids to taxonomy ids must be supplied
     """
-    format_fasta(args)
+    prepare.format_fasta(args)
 
 
 def update(args):
-    update_idmap(args)
+    prepare.update_idmap(args)
 
 
 def build(args):
     """Builds the diamond database from downloaded fasta and taxonomy files"""
-    build_diamond_db(args)
+    prepare.build_diamond_db(args)
 
 
 def run_diamond(args):
     """Runs diamond"""
-    diamond(args)
+    search.diamond(args)
 
 
 def usage(args):

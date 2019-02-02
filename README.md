@@ -1,6 +1,10 @@
 # TANGO
 
-**T**axonomic cl**A**ssificatio**N** of meta**G**enomic c**O**ntigs
+TANGO (**T**axonomic cl**A**ssificatio**N** of meta**G**enomic c**O**ntigs)
+is a tool that assigns taxonomy to metagenomic contigs by querying contig
+nucleotide sequences against a protein database using `diamond blastx`
+and parses hits using rank-specific thresholds. The theoretical basis
+is explained in [Alneberg et al 2018](https://www.nature.com/articles/sdata2018146).
 
 ## Usage
 
