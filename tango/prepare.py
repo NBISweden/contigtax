@@ -24,6 +24,89 @@ import time
 from glob import glob
 
 
+def progress(count, blocksize, totalsize):
+    """Prints progress on download to terminal"""
+    # Calculate percent and do some string formatting for constant output length
+    percent = round(count * blocksize * 100 / totalsize, 2)
+    l, d = len(str(percent).split(".")[0]), len(str(percent).split(".")[1])
+    percent = "{}{}{}".format((3-l)*" ", percent, (2-d)*"0")
+    # Calculate Mb downloaded so far and format string output
+    mb = round(count*blocksize/(1024**2), 2)
+    total_mb = round(totalsize / (1024**2), 2)
+    t = len(str(total_mb))
+    l, d = len(str(mb).split(".")[0]), len(str(mb).split(".")[1])
+    mb = "{}{}".format(mb, (2-d)*"0")
+    mb_l = len(mb)
+    msg = "({mb}/{tot} Mb){trail}".format(mb=mb, tot=total_mb, trail=" "*(t+3-mb_l))
+    sys.stderr.write("Downloading: {p}% complete {msg}\r".format(p=percent, mb=mb, msg=msg))
+    sys.stdout.flush()
+
+
+def progress_msg(i, n):
+    """Writes a progress status message for reformatting"""
+    if i % 1000 == 0:
+        if n > 0:
+            p = (float(i) / n) * 100
+            msg = "{}% ({}/{}) records parsed\r".format(round(p, 2), i, n)
+        else:
+            msg = "{} records parsed\r".format(i)
+        sys.stderr.write(msg)
+        sys.stdout.flush()
+
+
+def setup_download_dirs(args):
+    """Creates directories for downloading"""
+    if not args.dldir:
+        dldir = "./{db}".format(db=args.db)
+    else:
+        dldir = os.path.expandvars(args.dldir)
+    if args.tmpdir:
+        tmpdir = os.path.expandvars(args.tmpdir)
+        if not os.path.exists(tmpdir):
+            os.makedirs(tmpdir)
+    else:
+        tmpdir = dldir
+    if not os.path.exists(dldir):
+        os.makedirs(dldir)
+    return dldir, tmpdir
+
+
+def get_dl_status(fasta, force, skip_check):
+    """Checks whether to perform download of fasta
+
+    First the function checks if fastafile exists, then runs check_gzip to verify integrity.
+    If either of these checks fails the function returns True signalling that download should proceed
+    """
+    if os.path.exists(fasta):
+        if force:
+            sys.stderr.write("Downloading because force=True\n")
+            return True
+        else:
+            if skip_check:
+                return False
+            else:
+                sys.stderr.write("Checking integrity of download\n")
+                if check_gzip(fasta):
+                    sys.stderr.write("Downloaded file is OK. Skipping download\n")
+                    return False
+                else:
+                    sys.stderr.write("Downloaded file NOT OK. Re-downloading\n")
+                    return True
+    else:
+        return True
+
+
+def check_gzip(f):
+    """Checks if a local gzipped file is ok
+
+    Runs gunzip -t on the file using subprocess. Returns True on returncode 0.
+    """
+    status = subprocess.run(["gzip", "-t", f], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if status.returncode == 0:
+        return True
+    return False
+
+
 def build_diamond_db(args):
     """Runs diamond makedb
 
@@ -38,6 +121,7 @@ def build_diamond_db(args):
                                                            taxonnodes=args.taxonnodes, dbfile=dbfile,
                                                            threads=args.threads), shell=True)
     return 0
+
 
 def download_nr_idmap(args):
     """Downloads the nr protein to taxonomy id map"""
@@ -88,76 +172,6 @@ def download_ncbi_taxonomy(args):
     sys.stderr.write("Extracting nodes.dmp and names.dmp to {}\n".format(args.taxdir))
     tar.extractall(path=args.taxdir, members=members)
     return 0
-
-
-def get_dl_status(fasta, force, skip_check):
-    """Checks whether to perform download of fasta
-
-    First the function checks if fastafile exists, then runs check_gzip to verify integrity.
-    If either of these checks fails the function returns True signalling that download should proceed
-    """
-    if os.path.exists(fasta):
-        if force:
-            sys.stderr.write("Downloading because force=True\n")
-            return True
-        else:
-            if skip_check:
-                return False
-            else:
-                sys.stderr.write("Checking integrity of download\n")
-                if check_gzip(fasta):
-                    sys.stderr.write("Downloaded file is OK. Skipping download\n")
-                    return False
-                else:
-                    sys.stderr.write("Downloaded file NOT OK. Re-downloading\n")
-                    return True
-    else:
-        return True
-
-
-def check_gzip(f):
-    """Checks if a local gzipped file is ok
-
-    Runs gunzip -t on the file using subprocess. Returns True on returncode 0.
-    """
-    status = subprocess.run(["gzip", "-t", f], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if status.returncode == 0:
-        return True
-    return False
-
-
-def progress(count, blocksize, totalsize):
-    """Prints progress on download to terminal"""
-    # Calculate percent and do some string formatting for constant output length
-    percent = round(count * blocksize * 100 / totalsize, 2)
-    l, d = len(str(percent).split(".")[0]), len(str(percent).split(".")[1])
-    percent = "{}{}{}".format((3-l)*" ", percent, (2-d)*"0")
-    # Calculate Mb downloaded so far and format string output
-    mb = round(count*blocksize/(1024**2), 2)
-    total_mb = round(totalsize / (1024**2), 2)
-    t = len(str(total_mb))
-    l, d = len(str(mb).split(".")[0]), len(str(mb).split(".")[1])
-    mb = "{}{}".format(mb, (2-d)*"0")
-    mb_l = len(mb)
-    msg = "({mb}/{tot} Mb){trail}".format(mb=mb, tot=total_mb, trail=" "*(t+3-mb_l))
-    sys.stderr.write("Downloading: {p}% complete {msg}\r".format(p=percent, mb=mb, msg=msg))
-    sys.stdout.flush()
-
-
-def setup_download_dirs(args):
-    if not args.dldir:
-        dldir = "./{db}".format(db=args.db)
-    else:
-        dldir = os.path.expandvars(args.dldir)
-    if args.tmpdir:
-        tmpdir = os.path.expandvars(args.tmpdir)
-        if not os.path.exists(tmpdir):
-            os.makedirs(tmpdir)
-    else:
-        tmpdir = dldir
-    if not os.path.exists(dldir):
-        os.makedirs(dldir)
-    return dldir, tmpdir
 
 
 def download_fasta(args):
@@ -226,25 +240,6 @@ def read_relase_notes(f):
     return -1
 
 
-def zip_file(src, target):
-    """Compresses an existing file"""
-    with open(src, 'rb') as f_in:
-        with gz.open(target, 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
-
-
-def progress_msg(i, n):
-    """Writes a progress status message for reformatting"""
-    if i % 1000 == 0:
-        if n > 0:
-            p = (float(i) / n) * 100
-            msg = "{}% ({}/{}) records parsed\r".format(round(p, 2), i, n)
-        else:
-            msg = "{} records parsed\r".format(i)
-        sys.stderr.write(msg)
-        sys.stdout.flush()
-
-
 def parse_seqid(record):
     """Parses sequence and taxids from fasta"""
     if "UniRef" in record.id:
@@ -272,6 +267,37 @@ def setup_format_dirs(args):
     else:
         n = 0
     return formatdir, tmpdir, n
+
+
+def update_idmap(args):
+    """Updates taxonmap ids
+
+    If some sequence ids were too long (e.g. longer than 14 characters) the taxonmap file needs to be updated
+    with the shorter sequence ids.
+    """
+    idmap = {}
+    sys.stderr.write("Reading idmap from {}\n".format(args.idfile))
+    with gz.open(args.idfile, 'rt') as fhin:
+        for line in fhin:
+            old, new = line.rstrip().split("\t")
+            idmap[old] = new
+    sys.stderr.write("Creating updated taxonmap {} from {}\n".format(args.newfile, args.taxonmap))
+    with gz.open(args.taxonmap, 'rt') as fhin, gz.open(args.newfile, 'wb') as fhout:
+        s = "{}\t{}\t{}\t{}\n".format("accession", "accession.version", "taxid", "gi")
+        fhout.write(s.encode())
+        for i, line in enumerate(fhin, start=1):
+            if i == 1:
+                continue
+            progress_msg(i, -1)  # Handle progress report output
+            line = line.rstrip()
+            acc, accv, taxid, gi = line.split("\t")
+            try:
+                new = idmap[acc]
+                s = "{}\t{}\t{}\t{}\n".format(new, new, taxid, new)
+            except KeyError:
+                s = "{}\n".format(line)
+            fhout.write(s.encode())
+    return 0
 
 
 def write_idmap(s, fhidmap):
@@ -342,4 +368,8 @@ def format_fasta(args):
         move(_idmapfile, idmapfile)
         sys.stderr.write("{}/{} sequence ids longer than {} characters written to {}\n".format(len(idmap), i,
                                                                                                args.maxidlen, idmapfile))
-    return idmap
+        if not uniref:
+            sys.stderr.write(
+                ">>>Make sure to update your prot.accession2taxid.gz file with updated ids. See 'tango update'<<<\n")
+
+    return 0

@@ -11,13 +11,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import os
-import sys
-import logging
 from argparse import ArgumentParser
-from tango_prepare import download_fasta, format_fasta, download_ncbi_taxonomy, download_nr_idmap, build_diamond_db
+from prepare import download_fasta, download_ncbi_taxonomy, download_nr_idmap
+from prepare import format_fasta, update_idmap, build_diamond_db
+from search import diamond
 
-logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
+__version__ = '0.0.1'
 
 
 def download(args):
@@ -30,7 +29,7 @@ def download(args):
         download_fasta(args)
 
 
-def format(args):
+def reformat(args):
     """Reformats a database to comply with diamond
 
     diamond makedb has some requirements when adding taxonomic info
@@ -38,7 +37,11 @@ def format(args):
     2. nodes.dmp and names.dmp must be supplied
     3. a prot.accession2taxid.gz file mapping protein ids to taxonomy ids must be supplied
     """
-    idmap = format_fasta(args)
+    format_fasta(args)
+
+
+def update(args):
+    update_idmap(args)
 
 
 def build(args):
@@ -46,15 +49,26 @@ def build(args):
     build_diamond_db(args)
 
 
+def run_diamond(args):
+    """Runs diamond"""
+    diamond(args)
+
+
 def usage(args):
-    args.print_help()
+    if args.version:
+        print(__version__)
+    else:
+        print("""
+        To print help message: tango -h
+        """)
 
 
 def main():
     parser = ArgumentParser()
+    parser.add_argument("-v", "--version", action="store_true")
+    parser.set_defaults(func=usage)
     subparser = parser.add_subparsers(title="subcommands",
                                       description="valid subcommands")
-    parser.set_defaults(func=usage)
     # Download parser
     download_parser = subparser.add_parser("download", help="Download fasta file and NCBI taxonomy files")
     download_parser.add_argument("db", choices=["uniref100", "uniref90", "uniref50", "nr", "taxonomy", "idmap"],
@@ -92,7 +106,16 @@ def main():
                                      a file with the original id""")
     format_parser.add_argument("--tmpdir", type=str,
                                help="Temporary directory for writing fasta files")
-    format_parser.set_defaults(func=format)  # Call format function with arguments
+    format_parser.set_defaults(func=reformat)  # Call format function with arguments
+    # Update parser
+    update_parser = subparser.add_parser("update", help="Update protein to taxid map file with new sequence ids")
+    update_parser.add_argument("taxonmap", type=str,
+                               help="Existing prot.accession2taxid.gz file")
+    update_parser.add_argument("idfile", type=str,
+                               help="File mapping long sequence ids to new ids")
+    update_parser.add_argument("newfile", type=str,
+                               help="Updated mapfile")
+    update_parser.set_defaults(func=update)  # Call update function with arguments
     # Build parser
     build_parser = subparser.add_parser("build", help="Build diamond database from downloaded files")
     build_parser.add_argument("fastafile", help="Specify (reformatted) fasta file")
@@ -103,6 +126,30 @@ def main():
     build_parser.add_argument("-p", "--threads", type=int, default=1,
                               help="Number of threads to use when building (defaults to 1)")
     build_parser.set_defaults(func=build)  # Call build function with arguments
+    # Search parser
+    search_parser = subparser.add_parser("search", help="Run diamond blastx with nucleotide fasta file")
+    search_parser.add_argument("query", type=str,
+                               help="Query contig nucleotide file")
+    search_parser.add_argument("dbfile", type=str,
+                               help="Diamond database file")
+    search_parser.add_argument("outfile", type=str,
+                               help="Diamond output file")
+    search_parser.add_argument("-p", "--threads", default=1, type=int,
+                               help="Threads to allocate for diamond")
+    search_parser.add_argument("-b", "--blocksize", type=float, default=2.0,
+                               help="Sequence block size in billions of letters (default=2.0). Set to 20 on clusters")
+    search_parser.add_argument("-c", "--chunks", type=int, default=4,
+                               help="Number of chunks for index processing (default=4)")
+    search_parser.add_argument("--top", type=int, default=10,
+                               help="report alignments within this percentage range of top alignment score (default=10)")
+    search_parser.add_argument("-e", "--evalue", default=0.001, type=float,
+                               help="maximum e-value to report alignments (default=0.001)")
+    search_parser.add_argument("-t", "--tmpdir", type=str,
+                               help="directory for temporary files")
+    search_parser.set_defaults(func=run_diamond)
+    # Assign parser
+    assign_parser = subparser.add_parser("assign", help="Assigns taxonomy from diamond output")
+    assign_parser.add_argument("diamond_results")
     args = parser.parse_args()
     args.func(args)
 
