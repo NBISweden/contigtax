@@ -269,6 +269,8 @@ def setup_format_dirs(args):
         os.makedirs(formatdir)
     if not args.tmpdir:
         tmpdir = formatdir
+    else:
+        tmpdir = args.tmpdir
     tmpdir = os.path.expandvars(tmpdir)
     if not os.path.exists(tmpdir):
         os.makedirs(tmpdir)
