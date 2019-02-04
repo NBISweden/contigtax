@@ -12,12 +12,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
+from ete3 import NCBITaxa
 import urllib.request
 import sys
 from Bio.SeqIO import parse
 import gzip as gz
 import shutil
-from collections import defaultdict
+from pathlib import Path
 import subprocess
 import tarfile
 import time
@@ -172,6 +173,16 @@ def download_ncbi_taxonomy(args):
     sys.stderr.write("Extracting nodes.dmp and names.dmp to {}\n".format(args.taxdir))
     tar.extractall(path=args.taxdir, members=members)
     return 0
+
+
+def init_sqlite_taxdb(taxdir):
+    """Creates ete3 sqlite database"""
+    dbfile = os.path.join(taxdir, 'taxonomy.sqlite')
+    if not os.path.exists(taxdir):
+        os.makedirs(taxdir)
+    Path(dbfile).touch()
+    ncbi_taxa = NCBITaxa(dbfile)
+    return ncbi_taxa
 
 
 def download_fasta(args):

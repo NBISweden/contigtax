@@ -15,6 +15,7 @@
 from argparse import ArgumentParser
 from tango import prepare
 from tango import search
+from tango import assign
 
 __version__ = '0.0.1'
 
@@ -23,6 +24,7 @@ def download(args):
     """Handles downloading (fasta and NCBI taxonomy)"""
     if args.db == "taxonomy":
         prepare.download_ncbi_taxonomy(args)
+        prepare.init_sqlite_taxdb(args.taxdir)
     elif args.db == "idmap":
         prepare.download_nr_idmap(args)
     else:
@@ -52,6 +54,41 @@ def build(args):
 def run_diamond(args):
     """Runs diamond"""
     search.diamond(args)
+
+
+def assign_taxonomy(args):
+    """Parses diamond results and assigns taxonomy"""
+    # Parse outformat 6
+    if args.format == 6:
+        assign.parse_hits6(args)
+        # Read blast file
+        res = pd.read_table(args.diamondfile, index_col=0, header=None,
+                            names=['qseqid', 'sseqid', 'pident', 'length', 'mismatch', 'gapopen', 'qstart', 'qend',
+                                   'sstart', 'send', 'evalue', 'bitscore', 'staxids', 'slen'])
+        # Get lineages for unique taxids
+        lineage_df = get_lineage_df(res, ncbi_taxa, args.ranks)
+        # Merge dataframes
+        res = pd.merge(res, lineage_df, left_on="staxids", right_index=True, how="left")
+        res_tax, res_taxids = parse_hits6(res, args.top, args.ranks, args.mode, rank_thresholds, args.vote_threshold)
+        if args.blobout:
+            write_blobout(args.blobout, res_taxids, args.ranks)
+        res_df = pd.DataFrame(res_tax).T[args.ranks]
+    elif args.format == 102:
+        res = pd.read_table(args.diamondfile, header=None, names=["contig", "taxid", "evalue"], index_col=0)
+        if args.blobout:
+            res = res.assign(Score=pd.Series([1] * len(res), index=res.index))
+            res = res.assign(Subject=pd.Series(["ref"] * len(res), index=res.index))
+            res.loc[:, ["taxid", "Score", "Subject"]].to_csv(args.blobout, sep="\t", index=True, header=False)
+        taxids = res.taxid.unique()
+        # Get LCA dictionary for each taxid
+        lca_dict = parse_hits102(taxids, ncbi_taxa, ranks=args.ranks)
+        lca_df = pd.DataFrame(lca_dict).loc[args.ranks].T
+        # Merge LCA with results on taxids
+        res_df = pd.merge(res, lca_df, left_on="taxid", right_index=True)[args.ranks]
+    res_df.index.name = "query"
+    res_df.sort_index(inplace=True)
+    res_df.to_csv(args.outfile, sep="\t")
+    # assign.
 
 
 def usage(args):
@@ -149,7 +186,28 @@ def main():
     search_parser.set_defaults(func=run_diamond)
     # Assign parser
     assign_parser = subparser.add_parser("assign", help="Assigns taxonomy from diamond output")
-    assign_parser.add_argument("diamond_results")
+    assign_parser.add_argument("diamond_results", type=str,
+                               help="Diamond blastx results")
+    assign_parser.add_argument("outfile", type=str,
+                               help="Output file")
+    assign_parser.add_argument("-m", "--mode", type=str, default="rank_lca", choices=['rank_lca', 'rank_vote', 'score'],
+                               help="Mode to use for parsing taxonomy: 'rank_lca' (default), 'rank_vote' or 'score'")
+    assign_parser.add_argument("-t", "--taxdir", type=str, default="./taxonomy",
+                               help="Directory specified during 'tango download taxonomy'. Defaults to taxonomy/.")
+    assign_parser.add_argument("-T", "--top", type=int, default=10,
+                               help="Top percent of best score to consider hits for")
+    assign_parser.add_argument("-f", "--format", type=int, default=6, choices=[6, 102],
+                               help="Diamond output format. 6 (default) or 102")
+    assign_parser.add_argument("-r", "--ranks", nargs="*", default=["superkingdom", "phylum", "class", "order",
+                                                                    "family", "genus", "species"])
+    assign_parser.add_argument("-p", "--threads", type=int, default=1,
+                               help="Number of threads to use. Defaults to 1.")
+    assign_parser.add_argument("--rank_thresholds", nargs="*", default=[0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95])
+    assign_parser.add_argument("--vote_threshold", default=0.5, type=float,
+                               help="Minimum fraction required when voting on rank assignments.")
+    assign_parser.add_argument("--blobout", type=str,
+                               help="Output hits.tsv table compatible with blobtools")
+    assign_parser.set_defaults(func=assign_taxonomy)
     args = parser.parse_args()
     args.func(args)
 
