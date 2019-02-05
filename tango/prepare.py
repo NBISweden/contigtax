@@ -265,7 +265,7 @@ def setup_format_dirs(args):
     """Checks what directories and files to create for formatting"""
     fastadir = os.path.dirname(args.fastafile)
     formatdir = os.path.dirname(args.reformatted)
-    if not os.path.exists(formatdir):
+    if not os.path.exists(formatdir) and formatdir != "":
         os.makedirs(formatdir)
     if not args.tmpdir:
         tmpdir = formatdir
