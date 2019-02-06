@@ -5,10 +5,10 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="tango",
-    version="0.0.1",
+    version="0.1.0",
     author="John Sundh",
     author_email="john.sundh@scilifelab.se",
-    description="A package to add taxonomy to metagenomic contigs",
+    description="A package to assign taxonomy to metagenomic contigs",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/johnne/tango",
