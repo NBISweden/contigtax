@@ -22,6 +22,7 @@ from pathlib import Path
 import subprocess
 import tarfile
 import time
+import tqdm
 from glob import glob
 
 
@@ -42,17 +43,29 @@ def progress(count, blocksize, totalsize):
     sys.stderr.write("Downloading: {p}% complete {msg}\r".format(p=percent, mb=mb, msg=msg))
     sys.stdout.flush()
 
+def my_hook(t):
+    """Wraps tqdm instance.
+    https://github.com/tqdm/tqdm/blob/master/examples/tqdm_wget.py
+    Don't forget to close() or __exit__()
+    the tqdm instance once you're done with it (easiest using `with` syntax).
+    -------
+    """
+    last_b = [0]
 
-def progress_msg(i, n):
-    """Writes a progress status message for reformatting"""
-    if i % 1000 == 0:
-        if n > 0:
-            p = (float(i) / n) * 100
-            msg = "{}% ({}/{}) records parsed\r".format(round(p, 2), i, n)
-        else:
-            msg = "{} records parsed\r".format(i)
-        sys.stderr.write(msg)
-        sys.stdout.flush()
+    def update_to(b=1, bsize=1, tsize=None):
+        """
+        b  : int, optional
+            Number of blocks transferred so far [default: 1].
+        bsize  : int, optional
+            Size of each block (in tqdm units) [default: 1].
+        tsize  : int, optional
+            Total size (in tqdm units). If [default: None] remains unchanged.
+        """
+        if tsize is not None:
+            t.total = tsize
+        t.update((b - last_b[0]) * bsize)
+        last_b[0] = b
+    return update_to
 
 
 def setup_download_dirs(args):
@@ -149,7 +162,9 @@ def download_nr_idmap(args):
     _local = "{}/prot.accession2taxid.gz".format(tmpdir)
     local = "{}/prot.accession2taxid.gz".format(dldir)
     sys.stderr.write("Downloading prot.accession2taxid.gz to {}\n".format(dldir))
-    urllib.request.urlretrieve(url, _local, reporthook=progress)
+    with tqdm.tqdm(ncols=100, unit="bytes") as t:
+        reporthook = my_hook(t)
+        urllib.request.urlretrieve(url, _local, reporthook=reporthook)
     move(_local, local)
     return 0
 
@@ -167,7 +182,9 @@ def download_ncbi_taxonomy(args):
     url = "ftp://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
     local = "{}/taxdump.tar.gz".format(args.taxdir)
     sys.stderr.write("Downloading NCBI taxdump.tar.gz\n")
-    urllib.request.urlretrieve(url, local, reporthook=progress)
+    with tqdm.tqdm(ncols=100, unit=" bytes") as t:
+        reporthook = my_hook(t)
+        urllib.request.urlretrieve(url, local, reporthook=reporthook)
     tar = tarfile.open(local, "r:gz")
     members = [tar.getmember(x) for x in ["nodes.dmp", "names.dmp"]]
     sys.stderr.write("Extracting nodes.dmp and names.dmp to {}\n".format(args.taxdir))
@@ -213,11 +230,15 @@ def download_fasta(args):
     dl = get_dl_status(fasta, args.force, args.skip_check)
     if dl:
         sys.stderr.write("Downloading {} to {}\n".format(url, tmp_fasta))
-        urllib.request.urlretrieve(url, tmp_fasta, reporthook=progress)  # Download the fasta
+        with tqdm.tqdm(ncols=100, unit=" bytes") as t:
+            reporthook = my_hook(t)
+            urllib.request.urlretrieve(url, tmp_fasta, reporthook=reporthook)  # Download the fasta
         if args.db == "nr" and not args.skip_idmap:
             _idmap = "{}/prot.accession2taxid.gz".format(os.path.expandvars(tmpdir))
             idmap = "{}/prot.accession2taxid.gz".format(dldir)
-            urllib.request.urlretrieve(idmap_url, _idmap, reporthook=progress)  # Download the nr idmap
+            with tqdm.tqdm(ncols=100, unit=" bytes") as t:
+                reporthook = my_hook(t)
+                urllib.request.urlretrieve(idmap_url, _idmap, reporthook=reporthook)  # Download the nr idmap
             move(_idmap, idmap)
         move(tmp_fasta, fasta)  # Move fasta from temporary directory
         sys.stderr.write("Download complete\n")
@@ -255,7 +276,10 @@ def parse_seqid(record):
     """Parses sequence and taxids from fasta"""
     if "UniRef" in record.id:
         newid = (record.id).split("_")[-1]  # Remove the 'UniRefxx_' string
-        taxid = [x.split("=")[1] for x in (record.description).split(" ") if "TaxID" in x][0]
+        try:
+            taxid = [x.split("=")[1] for x in (record.description).split(" ") if "TaxID" in x][0]
+        except IndexError:
+            taxid = None
         return newid, taxid
     else:
         return record.id, None
@@ -298,10 +322,9 @@ def update_idmap(args):
     with gz.open(args.taxonmap, 'rt') as fhin, gz.open(args.newfile, 'wb') as fhout:
         s = "{}\t{}\t{}\t{}\n".format("accession", "accession.version", "taxid", "gi")
         fhout.write(s.encode())
-        for i, line in enumerate(fhin, start=1):
-            if i == 1:
+        for i, line in enumerate(tqdm.tqdm(fhin, ncols=100, total=None, unit=" lines")):
+            if i == 0:
                 continue
-            progress_msg(i, -1)  # Handle progress report output
             line = line.rstrip()
             acc, accv, taxid, gi = line.split("\t")
             try:
@@ -332,6 +355,10 @@ def format_fasta(args):
         sys.stderr.write("{} already exists. Specify '-f' to force overwrite\n".format(args.reformatted))
         return 0
     formatdir, tmpdir, n = setup_format_dirs(args)
+    if n < 0:
+        N = None
+    else:
+        N = n
     # Fasta and reformatted fasta files
     _fasta_r = "{}/{}".format(tmpdir, os.path.basename(args.reformatted))
     # Mapping file with protein accessions to taxids
@@ -356,8 +383,7 @@ def format_fasta(args):
     with gz.open(args.fastafile, 'rt') as fhin, gz.open(_fasta_r, 'wb') as fhreformat:
         idmap_string = "{}\t{}\t{}\t{}\n".format("accession", "accession.version", "taxid", "gi")
         write_idmap(idmap_string, fhidmap)
-        for i, record in enumerate(parse(fhin, "fasta"), start=1):
-            progress_msg(i, n)  # Handle progress report output
+        for i, record in enumerate(tqdm.tqdm(parse(fhin, "fasta"), unit=" records", ncols=100, total=N)):
             newid, taxid = parse_seqid(record)
             if len(newid) > args.maxidlen:
                 newid = "id{j}".format(j=j)
