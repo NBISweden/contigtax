@@ -30,5 +30,10 @@ tango build uniref100/uniref100.reformat.fasta.gz uniref100/prot.accession2taxid
 
 5. Search
 ```
-tango search assembly.fa uniref100/diamond.dmnd
+tango search -p 4 assembly.fa uniref100/diamond.dmnd assembly.tsv.gz
+```
+
+6. Assign
+```
+tango assign -p 4 assembly.tsv.gz assembly.taxonomy.tsv
 ```
