@@ -16,8 +16,8 @@ from argparse import ArgumentParser
 from tango import prepare
 from tango import search
 from tango import assign
-
-__version__ = '0.0.1'
+from time import time
+import sys
 
 
 def download(args):
@@ -43,6 +43,11 @@ def reformat(args):
 
 
 def update(args):
+    """Updates the protein -> taxid idmap
+
+    If protein accessions were too long these were remapped during the format stage. This requires a new
+    map file to be created with the new (shorter) protein ids.
+    """
     prepare.update_idmap(args)
 
 
@@ -53,42 +58,23 @@ def build(args):
 
 def run_diamond(args):
     """Runs diamond"""
+    start_time = time()
+    sys.stderr.write("Running diamond blastx with {} threads\n".format(args.threads))
     search.diamond(args)
+    end_time = time()
+    run_time = round(end_time - start_time, 1)
+    sys.stderr.write("Total time: {}s\n".format(run_time))
 
 
 def assign_taxonomy(args):
     """Parses diamond results and assigns taxonomy"""
-    # Parse outformat 6
-    if args.format == 6:
-        assign.parse_hits6(args)
-        # Read blast file
-        res = pd.read_table(args.diamondfile, index_col=0, header=None,
-                            names=['qseqid', 'sseqid', 'pident', 'length', 'mismatch', 'gapopen', 'qstart', 'qend',
-                                   'sstart', 'send', 'evalue', 'bitscore', 'staxids', 'slen'])
-        # Get lineages for unique taxids
-        lineage_df = get_lineage_df(res, ncbi_taxa, args.ranks)
-        # Merge dataframes
-        res = pd.merge(res, lineage_df, left_on="staxids", right_index=True, how="left")
-        res_tax, res_taxids = parse_hits6(res, args.top, args.ranks, args.mode, rank_thresholds, args.vote_threshold)
-        if args.blobout:
-            write_blobout(args.blobout, res_taxids, args.ranks)
-        res_df = pd.DataFrame(res_tax).T[args.ranks]
-    elif args.format == 102:
-        res = pd.read_table(args.diamondfile, header=None, names=["contig", "taxid", "evalue"], index_col=0)
-        if args.blobout:
-            res = res.assign(Score=pd.Series([1] * len(res), index=res.index))
-            res = res.assign(Subject=pd.Series(["ref"] * len(res), index=res.index))
-            res.loc[:, ["taxid", "Score", "Subject"]].to_csv(args.blobout, sep="\t", index=True, header=False)
-        taxids = res.taxid.unique()
-        # Get LCA dictionary for each taxid
-        lca_dict = parse_hits102(taxids, ncbi_taxa, ranks=args.ranks)
-        lca_df = pd.DataFrame(lca_dict).loc[args.ranks].T
-        # Merge LCA with results on taxids
-        res_df = pd.merge(res, lca_df, left_on="taxid", right_index=True)[args.ranks]
-    res_df.index.name = "query"
-    res_df.sort_index(inplace=True)
-    res_df.to_csv(args.outfile, sep="\t")
-    # assign.
+    start_time = time()
+    sys.stderr.write("Assigning taxonomy with {} threads\n".format(args.threads))
+    # Parse diamond file
+    assign.parse_hits(args)
+    end_time = time()
+    run_time = round(end_time-start_time, 1)
+    sys.stderr.write("Total time: {}s\n".format(run_time))
 
 
 def usage(args):
@@ -196,12 +182,13 @@ def main():
                                help="Directory specified during 'tango download taxonomy'. Defaults to taxonomy/.")
     assign_parser.add_argument("-T", "--top", type=int, default=10,
                                help="Top percent of best score to consider hits for")
-    assign_parser.add_argument("-f", "--format", type=int, default=6, choices=[6, 102],
-                               help="Diamond output format. 6 (default) or 102")
     assign_parser.add_argument("-r", "--ranks", nargs="*", default=["superkingdom", "phylum", "class", "order",
                                                                     "family", "genus", "species"])
     assign_parser.add_argument("-p", "--threads", type=int, default=1,
                                help="Number of threads to use. Defaults to 1.")
+    assign_parser.add_argument("-c", "--chunksize", type=int, default=1,
+                               help="Size of chunks sent to process pool. For large input files using a large chunksize\
+                                can make the job complete much faster than using the default value of 1.")
     assign_parser.add_argument("--rank_thresholds", nargs="*", default=[0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95])
     assign_parser.add_argument("--vote_threshold", default=0.5, type=float,
                                help="Minimum fraction required when voting on rank assignments.")
