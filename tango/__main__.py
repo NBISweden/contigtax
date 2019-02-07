@@ -18,6 +18,7 @@ from tango import search
 from tango import assign
 from time import time
 import sys
+import os
 
 
 def download(args):
@@ -68,6 +69,12 @@ def run_diamond(args):
 
 def assign_taxonomy(args):
     """Parses diamond results and assigns taxonomy"""
+    # Check outfile
+    if os.path.isdir(args.outfile):
+        sys.exit("\nERROR: Outfile {} is a directory\n".format(args.outfile))
+    outdir = os.path.dirname(args.outfile)
+    if outdir != "" and not os.path.exists(outdir):
+        os.makedirs(outdir)
     start_time = time()
     sys.stderr.write("Assigning taxonomy with {} threads\n".format(args.threads))
     # Parse diamond file
