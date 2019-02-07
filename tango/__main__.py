@@ -80,13 +80,19 @@ def assign_taxonomy(args):
     # Parse diamond file
     assign.parse_hits(args)
     end_time = time()
-    run_time = round(end_time-start_time, 1)
+    run_time = round(end_time - start_time, 1)
     sys.stderr.write("Total time: {}s\n".format(run_time))
+
+
+def get_version():
+    from tango import __version__
+    return '%(prog)s {version}'.format(version=__version__)
 
 
 def usage(args):
     if args.version:
-        print(__version__)
+        import tango
+        print(tango.version)
     else:
         print("""
         To print help message: tango -h
@@ -95,7 +101,8 @@ def usage(args):
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument("-v", "--version", action="store_true")
+    parser.add_argument('-v', '--version', action='version',
+                        version=get_version())
     parser.set_defaults(func=usage)
     subparser = parser.add_subparsers(title="subcommands",
                                       description="valid subcommands")
