@@ -48,16 +48,19 @@ def get_rank_thresholds(args):
 
 def add_names(x, taxid, ncbi_taxa):
     """Adds taxa names for taxonomy ids"""
-    names = ncbi_taxa.get_taxid_translator(list(x.loc[taxid].values) + [taxid])
+    names = ncbi_taxa.get_taxid_translator(list(x.loc[taxid].values)+[taxid])
     n = {}
     for rank in list(x.columns):
-        t = x.loc[taxid, rank]
-        if t < 0:
-            name = "{}.{}".format(names[-t], rank)
+        t = x.loc[taxid,rank]
+        if t<0:
+            known_name = names[-t]
+            if known_name == "root":
+                name = "Unclassified"
+            else:
+                name = "{}.{}".format("Unclassified",known_name)
         else:
             name = names[t]
         n["{}.name".format(rank)] = name
-    n["species.name"] = names[taxid]
     name_df = pd.DataFrame(n, index=[taxid])
     return pd.merge(x, name_df, left_index=True, right_index=True)
 
@@ -67,7 +70,7 @@ def propagate_lower(x, taxid, ranks):
     rev_ranks = [ranks[x] for x in list(range(len(ranks) - 1, -1, -1))]
     missing = {}
     known = taxid
-    for rank in rev_ranks[1:]:
+    for rank in rev_ranks[0:]:
         if rank not in x.columns:
             missing[rank] = -known
         else:
@@ -91,7 +94,7 @@ def get_lca(r, ranks):
                 lca = r.loc[query, higher_rank_names].values[0]
                 lca_taxids = r.loc[query, higher_ranks].values[0]
             return dict(zip(higher_ranks, lca)), dict(zip(higher_ranks, lca_taxids))
-    return {}
+    return {}, {}
 
 
 def parse_with_rank_thresholds(r, ranks, rank_thresholds, mode, vote_threshold):
@@ -113,6 +116,7 @@ def parse_with_rank_thresholds(r, ranks, rank_thresholds, mode, vote_threshold):
         lca = {}
         lca_taxids = {}
         # After filtering, either calculate lca from all filtered taxids
+
         if mode == "rank_lca":
             lca, lca_taxids = get_lca(_r, allowed_ranks)
         # Or at each rank, get most common taxid
@@ -187,9 +191,8 @@ def process_lineages(items):
     x = x.loc[x["rank"].isin(ranks)].reset_index().T
     x.columns = x.loc["rank"]
     x.drop("rank", inplace=True)
-    x.set_index("species", inplace=True)
-    if len(x.columns) < len(ranks) - 1:
-        x = propagate_lower(x, taxid, ranks)
+    x.index = [taxid]
+    x = propagate_lower(x, taxid, ranks)
     x = add_names(x, taxid, ncbi_taxa)
     return x
 
@@ -209,8 +212,10 @@ def process_queries(items):
     """Receives a query and its results and assigns taxonomy"""
     res_tax = {}
     res_taxids = {}
+    min_rank_threshold = 0
     query, lineage_df, res, rank_thresholds, args = items
-    min_rank_threshold = min([x for x in rank_thresholds.values()])
+    if len(rank_thresholds) > 0:
+        min_rank_threshold = min([x for x in rank_thresholds.values()])
     # Create pandas dataframe for slice
     res_df = pd.DataFrame(res, columns=['sseqid', 'pident', 'length', 'mismatch', 'gapopen', 'qstart', 'qend',
                                         'sstart', 'send', 'evalue', 'bitscore', 'staxids', 'slen'],
@@ -222,8 +227,7 @@ def process_queries(items):
     # Set index
     res_df.index.name = "qseqid"
     # Merge with lineage df
-    res_df = pd.merge(res_df.reset_index(), lineage_df.reset_index(), left_on="staxids", right_on="species", how="left")
-    res_df.set_index("qseqid", inplace=True)
+    res_df = pd.merge(res_df, lineage_df, left_on="staxids", right_index=True, how="left")
     # Initialize dictionaries
     res_tax[query] = dict.fromkeys(args.ranks, "Unclassified")
     res_taxids[query] = dict.fromkeys(args.ranks, -1)
@@ -262,7 +266,10 @@ def write_blobout(f, res_taxids, queries, ranks):
 def parse_hits(args):
     """Parse the diamond blastx output"""
     # Set up rank thresholds
-    rank_thresholds = get_rank_thresholds(args)
+    if "rank" in args.mode:
+        rank_thresholds = get_rank_thresholds(args)
+    else:
+        rank_thresholds = {}
     # Read diamond results
     if (args.diamond_results).split(".")[-1] == "gz":
         open_function = gz.open
@@ -271,6 +278,8 @@ def parse_hits(args):
     res, taxids = read_df(args.diamond_results, open_function)
     # Create lineage dataframe
     lineage_df = make_lineage_df(taxids, args.taxdir, args.ranks, args.threads)
+    # Set index to object
+    #lineage_df.rename(index=lambda x: str(x), inplace=True)
     # Set up multiprocessing pool
     total_queries = len(res)
     items = [[q, lineage_df, res[q], rank_thresholds, args] for q in res.keys()]
