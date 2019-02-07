@@ -396,9 +396,14 @@ def format_fasta(args):
             fasta_string = ">{}\n{}\n".format(newid, str(record.seq))  # Write record with new id
             fhreformat.write(fasta_string.encode())
     sys.stderr.write("{}/{} records parsed\n".format(i, i))
+    # Close idmap file handle
+    fhidmap.close()
+    # If uniref database the mapfile has been created during reformatting
     if uniref:
         move(_mapfile, mapfile)
+    # Move reformmated fasta
     move(_fasta_r, args.reformatted)
+    # Check if there are remapped sequences
     if len(idmap.keys()) > 0:
         with gz.open(_idmapfile, 'wb') as fhout:
             for old, new in idmap.items():
