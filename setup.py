@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="tango",
-    version="0.1.0",
+    version="0.2.0",
     author="John Sundh",
     author_email="john.sundh@scilifelab.se",
     description="A package to assign taxonomy to metagenomic contigs",
