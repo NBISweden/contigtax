@@ -195,7 +195,7 @@ def main():
     assign_parser.add_argument("-t", "--taxdir", type=str, default="./taxonomy",
                                help="Directory specified during 'tango download taxonomy'. Defaults to taxonomy/.")
     assign_parser.add_argument("-T", "--top", type=int, default=10,
-                               help="Top percent of best score to consider hits for")
+                               help="Top percent of best score to consider hits for (default=10)")
     assign_parser.add_argument("-r", "--ranks", nargs="*", default=["superkingdom", "phylum", "class", "order",
                                                                     "family", "genus", "species"])
     assign_parser.add_argument("-p", "--threads", type=int, default=1,
@@ -203,7 +203,7 @@ def main():
     assign_parser.add_argument("-c", "--chunksize", type=int, default=1,
                                help="Size of chunks sent to process pool. For large input files using a large chunksize\
                                 can make the job complete much faster than using the default value of 1.")
-    assign_parser.add_argument("--rank_thresholds", nargs="*", default=[0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95])
+    assign_parser.add_argument("--rank_thresholds", nargs="*", default=[0.4, 0.42, 0.46, 0.5, 0.55, 0.6, 0.85])
     assign_parser.add_argument("--vote_threshold", default=0.5, type=float,
                                help="Minimum fraction required when voting on rank assignments.")
     assign_parser.add_argument("--blobout", type=str,
