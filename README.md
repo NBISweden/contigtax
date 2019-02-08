@@ -3,8 +3,9 @@
 TANGO (**T**axonomic cl**A**ssificatio**N** of meta**G**enomic c**O**ntigs)
 is a tool that assigns taxonomy to metagenomic contigs by querying contig
 nucleotide sequences against a protein database using `diamond blastx`
-and parses hits using rank-specific thresholds. The theoretical basis
-is explained in [Alneberg et al 2018](https://www.nature.com/articles/sdata2018146).
+and parses hits using rank-specific thresholds. The use of rank-specific
+ thresholds was first introduced by [Luo et al 2014](https://academic.oup.com/nar/article/42/8/e73/1076763)
+ and used with some modification as explained in [Alneberg et al 2018](https://www.nature.com/articles/sdata2018146).
 
 ## Usage
 
@@ -13,7 +14,7 @@ is explained in [Alneberg et al 2018](https://www.nature.com/articles/sdata20181
 tango download uniref100
 ```
 
-2. Download NCBI taxdump
+2. Download NCBI taxonomy
 ```
 tango download taxonomy
 ```
