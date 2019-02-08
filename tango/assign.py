@@ -12,6 +12,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import pandas as pd
+import numpy as np
 from multiprocessing import Pool
 import tqdm
 import sys
@@ -42,7 +43,7 @@ def get_rank_thresholds(args):
     rank_thresholds = {}
     assert (len(args.rank_thresholds) == len(args.ranks))
     for i, rank in enumerate(args.ranks):
-        rank_thresholds[rank] = args.rank_thresholds[i]
+        rank_thresholds[rank] = float(args.rank_thresholds[i])
     return rank_thresholds
 
 
@@ -282,8 +283,6 @@ def parse_hits(args):
     res, taxids = read_df(args.diamond_results, open_function)
     # Create lineage dataframe
     lineage_df = make_lineage_df(taxids, args.taxdir, args.ranks, args.threads)
-    # Set index to object
-    #lineage_df.rename(index=lambda x: str(x), inplace=True)
     # Set up multiprocessing pool
     total_queries = len(res)
     items = [[q, lineage_df, res[q], rank_thresholds, args] for q in res.keys()]
@@ -298,6 +297,16 @@ def parse_hits(args):
         write_blobout(args.blobout, res_taxids, queries, args.ranks)
     res_df = pd.DataFrame(res_tax, index=queries)[args.ranks]
     res_df.index.name = "query"
+    # Write main output
     sys.stderr.write("Writing main output to {}\n".format(args.outfile))
     res_df.to_csv(args.outfile, sep="\t")
+    # Summary stats
+    unc = [len(res_df.loc[res_df.loc[:, rank].str.contains("Unclassified")]) for rank in args.ranks]
+    tot = [len(res_df)]*len(args.ranks)
+    cl = 100-np.divide(unc, tot)*100
+    cl = ["{}%".format(str(np.round(x,1))) for x in cl]
+    summary = pd.DataFrame(cl, index=args.ranks)
+    sys.stderr.write("### SUMMARY ###:\nClassified sequences per rank:\n")
+    summary.to_csv(sys.stderr, sep="\t", header=False)
+    sys.stderr.write("\n")
     return 0
