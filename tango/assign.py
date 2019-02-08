@@ -151,8 +151,12 @@ def propagate_taxa(res, ranks):
     known = ""
     for rank in ranks:
         if res[rank] == "Unclassified":
-            if known != "":
+            if known != "" and "Unclassified" not in known:
                 res[rank] = "{}.{}".format("Unclassified", known)
+            elif known != "" and "Unclassified" in known:
+                res[rank] = known
+            else:
+                continue
         else:
             known = res[rank]
     return res
