@@ -46,10 +46,17 @@ def diamond(args):
     tmpdir = check_dirs(args)
     outfile = str(args.outfile).replace(".gz", "")
     outfmt = "qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids slen"
-    status = subprocess.run('diamond blastx -q {q} -p {p} -f 6 {f} --top {top} -e {e} -b {b} -c {c} --tmpdir {tmpdir} \
-                   --more-sensitive --compress 1 -d {db} -o {out}'.format(q=args.query, p=args.threads, f=outfmt,
-                                                                          top=args.top, e=args.evalue, b=args.blocksize,
-                                                                          c=args.chunks, out=outfile, db=args.dbfile,
+    status = subprocess.run('diamond {m} -q {q} -p {p} -f 6 {f} --top {top} -e {e} -b {b} -c {c} --tmpdir {tmpdir} \
+                   --more-sensitive --compress 1 -d {db} -o {out}'.format(m=args.mode,
+                                                                          q=args.query,
+                                                                          p=args.threads,
+                                                                          f=outfmt,
+                                                                          top=args.top,
+                                                                          e=args.evalue,
+                                                                          b=args.blocksize,
+                                                                          c=args.chunks,
+                                                                          out=outfile,
+                                                                          db=args.dbfile,
                                                                           tmpdir=tmpdir),
                             shell=True)
     return status.returncode

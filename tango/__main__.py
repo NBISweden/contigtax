@@ -25,7 +25,7 @@ def download(args):
     """Handles downloading (fasta and NCBI taxonomy)"""
     if args.db == "taxonomy":
         prepare.download_ncbi_taxonomy(args)
-        prepare.init_sqlite_taxdb(args.taxdir)
+        prepare.init_sqlite_taxdb(args.taxdir, args.sqlitedb)
     elif args.db == "idmap":
         prepare.download_nr_idmap(args)
     else:
@@ -58,17 +58,15 @@ def build(args):
 
 
 def run_diamond(args):
-    """Runs diamond"""
-    start_time = time()
-    sys.stderr.write("Running diamond blastx with {} threads\n".format(args.threads))
+    """Runs diamond blastx against target database"""
     search.diamond(args)
-    end_time = time()
-    run_time = round(end_time - start_time, 1)
-    sys.stderr.write("Total time: {}s\n".format(run_time))
 
 
 def assign_taxonomy(args):
     """Parses diamond results and assigns taxonomy"""
+    # Check input
+    if args.querylenmap and args.subjectlenmap:
+        sys.exit("\nERROR: --querylenmap and --subjectlenmap can not both be specified\n")
     # Check outfile
     if os.path.isdir(args.outfile):
         sys.exit("\nERROR: Outfile {} is a directory\n".format(args.outfile))
@@ -111,13 +109,16 @@ def main():
     download_parser.add_argument("db", choices=["uniref100", "uniref90", "uniref50", "nr", "taxonomy", "idmap"],
                                  default="uniref100", help="Database to download. Defaults to 'uniref100'")
     download_parser.add_argument("-d", "--dldir",
-                                 help="Write files to this directory. Defaults to db name in current directory. \
-                                 Will be created if missing.")
+                                 help="Write files to this directory. Defaults to db name in current directory. "
+                                      "Will be created if missing.")
     download_parser.add_argument("--tmpdir", type=str,
                                  help="Temporary directory for downloading files")
     download_parser.add_argument("-t", "--taxdir", default="./taxonomy",
-                                 help="Directory to store NCBI taxdump files. \
-                                Defaults to 'taxonomy/' in current directory")
+                                 help="Directory to store NCBI taxdump files. "
+                                      "Defaults to 'taxonomy/' in current directory")
+    download_parser.add_argument("--sqlitedb", type=str, default="taxonomy.sqlite",
+                                 help="Name of ete3 sqlite file to be created within --taxdir. Defaults to "
+                                      "'taxonomy.sqlite'")
     download_parser.add_argument("-f", "--force", action="store_true",
                                  help="Overwrite downloaded files")
     download_parser.add_argument("--skip_check", action="store_true",
@@ -171,6 +172,9 @@ def main():
                                help="Diamond database file")
     search_parser.add_argument("outfile", type=str,
                                help="Diamond output file")
+    search_parser.add_argument("-m", "--mode", type=str, choices=["blastx", "blastp"], default="blastx",
+                               help="Choice of search mode for diamond: 'blastx' (default) for DNA query sequences "
+                               "or 'blastp' for amino acid query sequences")
     search_parser.add_argument("-p", "--threads", default=1, type=int,
                                help="Threads to allocate for diamond")
     search_parser.add_argument("-b", "--blocksize", type=float, default=2.0,
@@ -190,12 +194,25 @@ def main():
                                help="Diamond blastx results")
     assign_parser.add_argument("outfile", type=str,
                                help="Output file")
+    assign_parser.add_argument("--taxidmap", type=str,
+                               help="Provide custom protein to taxid mapfile.")
+    assign_parser.add_argument("--querylenmap", type=str,
+                               help="Provide query id to protein length mapfile. Lengths will be used to normalize\
+                                    the percent id of hits")
+    assign_parser.add_argument("--subjectlenmap", type=str,
+                               help="Provide subject id to protein length mapfile. Lengths will be used to normalize\
+                                        the percent id of hits")
     assign_parser.add_argument("-m", "--mode", type=str, default="rank_lca", choices=['rank_lca', 'rank_vote', 'score'],
                                help="Mode to use for parsing taxonomy: 'rank_lca' (default), 'rank_vote' or 'score'")
     assign_parser.add_argument("-t", "--taxdir", type=str, default="./taxonomy",
                                help="Directory specified during 'tango download taxonomy'. Defaults to taxonomy/.")
+    assign_parser.add_argument("--sqlitedb", type=str, default="taxonomy.sqlite",
+                                 help="Name of ete3 sqlite file to be created within --taxdir. Defaults to "
+                                      "'taxonomy.sqlite'")
     assign_parser.add_argument("-T", "--top", type=int, default=10,
                                help="Top percent of best score to consider hits for (default=10)")
+    assign_parser.add_argument("--nolen", action="store_true",
+                               help="Don't normalize percent id by (alignment length / subject length)")
     assign_parser.add_argument("-r", "--ranks", nargs="+", default=["superkingdom", "phylum", "class", "order",
                                                                     "family", "genus", "species"])
     assign_parser.add_argument("-p", "--threads", type=int, default=1,
