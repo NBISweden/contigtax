@@ -194,6 +194,10 @@ def main():
                                help="Diamond blastx results")
     assign_parser.add_argument("outfile", type=str,
                                help="Output file")
+    assign_parser.add_argument("--format", type=str, choices=["tango", "blast"], default="tango",
+                               help="Type of file format for diamond results. "
+                                    "blast=blast tabular output, "
+                                    "'tango'=blast tabular output with taxid and subject length in two last columns")
     assign_parser.add_argument("--taxidmap", type=str,
                                help="Provide custom protein to taxid mapfile.")
     assign_parser.add_argument("--querylenmap", type=str,

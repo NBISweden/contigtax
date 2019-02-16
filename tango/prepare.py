@@ -277,15 +277,18 @@ def read_relase_notes(f):
 
 def parse_seqid(record):
     """Parses sequence and taxids from fasta"""
+    taxid = None
     if "UniRef" in record.id:
+        db_type = "uniref"
         newid = (record.id).split("_")[-1]  # Remove the 'UniRefxx_' string
         try:
             taxid = [x.split("=")[1] for x in (record.description).split(" ") if "TaxID" in x][0]
         except IndexError:
             taxid = None
-        return newid, taxid
     else:
-        return record.id, None
+        db_type = "non_uniref"
+        newid = record.id
+    return newid, taxid, db_type
 
 
 def setup_format_dirs(args):
@@ -387,13 +390,15 @@ def format_fasta(args):
         idmap_string = "{}\t{}\t{}\t{}\n".format("accession", "accession.version", "taxid", "gi")
         write_idmap(idmap_string, fhidmap)
         for i, record in enumerate(tqdm.tqdm(parse(fhin, "fasta"), unit=" records", ncols=100, total=N)):
-            newid, taxid = parse_seqid(record)
+            newid, taxid, format = parse_seqid(record)
             if len(newid) > args.maxidlen:
                 newid = "id{j}".format(j=j)
                 idmap[record.id] = newid
                 j += 1
-            if taxid:  # If a taxid is returned we can assume we are dealing with UniRef fasta
-                uniref = True
+            # Skip UniRef entries with no taxid
+            if format == "uniref":
+                if not taxid:
+                    continue
                 idmap_string = "{}\t{}\t{}\t{}\n".format(newid, newid, taxid, newid)  # Write newid to taxid mapping
                 write_idmap(idmap_string, fhidmap)
             fasta_string = ">{}\n{}\n".format(newid, str(record.seq))  # Write record with new id

@@ -190,7 +190,6 @@ def parse_with_rank_thresholds(r, ranks, rank_thresholds, mode, vote_threshold):
         lca = {}
         lca_taxids = {}
         # After filtering, either calculate lca from all filtered taxids
-
         if mode == "rank_lca":
             lca, lca_taxids = get_lca(_r, allowed_ranks)
         # Or at each rank, get most common taxid
@@ -313,7 +312,7 @@ def read_taxidmap(f, ids):
     return pd.DataFrame(taxidmap, index=["staxids"]).T, list(set(taxidmap.values()))
 
 
-def read_df(file, taxidmap):
+def read_df(args):
     """
     Reads the blast output into a format that can be processed with the multiprocessing module
 
@@ -327,38 +326,43 @@ def read_df(file, taxidmap):
     Otherwise the output may have the typical blast format 6 output.
     """
     open_function = open
-    if ".gz" in file:
+    if ".gz" in args.diamond_results:
         open_function = gz.open
     r = {}
-    # f = 0 (tango) or 1 (blast) input
-    f = 0
     taxids = []
-    with open_function(file, 'rt') as fhin:
-        for line in tqdm.tqdm(fhin, desc="Reading {}".format(f), ncols=100, unit=" lines"):
+    queries = {}
+    with open_function(args.diamond_results, 'rt') as fhin:
+        for line in tqdm.tqdm(fhin, desc="Reading {}".format(args.diamond_results), ncols=100, unit=" lines"):
             line = line.rstrip()
             items = line.rsplit()
-            # If file has 14 columns we assume it's internal tango standard format
-            # with taxid in second to last column and subject length in last column
-            if len(items) == 14:
+            # Calculate score threshold the first time a query is observed
+            query = items[0]
+            score = float(items[11])
+            try:
+                min_score = queries[query]
+            except KeyError:
+                min_score = score * ((100 - args.top) / 100)
+                queries[query] = min_score
+            if score < min_score:
+                continue
+            if args.format == "tango" and len(items)==14:
                 taxids.append(items[-2])
-                f = 0
-            # If file has 12 columns we assume it's typical blast 6 format
-            # In that case a protein -> taxonomy id map has to be present
-            elif len(items) == 12:
-                if not taxidmap:
+            elif args.format == "blast" and len(items) == 12:
+                if not args.taxidmap:
                     sys.exit(
                         "ERROR: Standard blast input detected with no protein -> taxid file specified (--taxidmap).")
-                f = 1
             else:
-                sys.exit("ERROR: Unrecognized input format")
+                continue
             try:
                 r[items[0]] += [[items[1]] + [float(x) for x in items[2:]]]
             except KeyError:
                 r[items[0]] = [[items[1]] + [float(x) for x in items[2:]]]
-    if f == 1:
+    # If this is blast format then we return all subject ids found
+    if args.format == "blast":
         ids = list(set([r[key][i][0] for key in list(r.keys()) for i in range(0, len(r[key]))]))
-        return r, ids, f
-    return r, list(set(taxids)), f
+        return r, ids
+    # If this is tango format then return all taxids found
+    return r, list(set(taxids))
 
 
 def process_lineages(items):
@@ -382,12 +386,19 @@ def make_lineage_df(taxids, taxdir, dbname, ranks, threads=1):
     # Read the taxonomy db
     ncbi_taxa = init_sqlite_taxdb(taxdir, dbname)
     lineages = ncbi_taxa.get_lineage_translator(taxids)
+    # Get possible translations for taxids that have been changed
+    _, translate_dict = ncbi_taxa._translate_merged(list(set(taxids).difference(lineages.keys())))
+    rename = {y:x for x,y in translate_dict.items()}
+    # Update lineages with missing taxids
+    lineages.update(ncbi_taxa.get_lineage_translator(translate_dict.values()))
     items = [[taxid, ranks, taxdir, dbname, lineages[taxid]] for taxid in list(lineages.keys())]
     with Pool(processes=threads) as pool:
         res = list(
             tqdm.tqdm(pool.imap(process_lineages, items), desc="Creating lineages", total=len(items), unit=" taxids",
                       ncols=100))
-    return pd.concat(res, sort=False)
+    lineage_df = pd.concat(res, sort=False)
+    lineage_df.rename(index=rename, inplace=True)
+    return lineage_df
 
 
 def process_queries(items):
@@ -469,15 +480,15 @@ def parse_hits(args):
     """
     # Set up rank thresholds
     if "rank" in args.mode:
-        rank_thresholds = get_rank_thresholds(args)
+        rank_thresholds = get_rank_thresholds(args.ranks, args.rank_thresholds)
     else:
         rank_thresholds = {}
     # Read diamond results
-    res, ids, f = read_df(args.diamond_results, args.taxidmap)
+    res, ids = read_df(args)
     # Read protein -> taxidmap file if specified
     taxidmap = pd.DataFrame()
     lengths = pd.DataFrame()
-    if f == 1:
+    if args.format == "blast":
         taxidmap, taxids = read_taxidmap(args.taxidmap, ids)
         if args.querylenmap or args.subjectlenmap:
             lengthmap = read_lengthmap(args, res)
@@ -488,22 +499,26 @@ def parse_hits(args):
     # Set up multiprocessing pool
     total_queries = len(res)
     items = []
-    for q in res.keys():
+    for q in tqdm.tqdm(res.keys(), total=total_queries, unit=" queries", ncols=100, desc="Staging queries"):
         # If the diamond output does not have standard tango format (i.e. contains subject length and taxid) we
         # do some work to add this information.
-        if f == 1:
+        if args.format == "blast":
             # Get all subject ids
-            s = list(set([res[q][i][0] for i in range(0, len(res[q]))]))
+            s = list(set([res[q][i][0] for i in range(0, len(res[q]))]).intersection(lineage_df.index))
+            # Get all taxids for this query
+            q_taxids = taxidmap.loc[s,"staxids"].unique()
             # Get lengths if specified by user
             if args.querylenmap:
                 lengths = lengthmap.loc[q]
             elif args.subjectlenmap:
                 lengths = lengthmap.loc[s]
-            items.append([q, lineage_df, res[q], rank_thresholds, args, taxidmap.loc[s], lengths])
+            items.append([q, lineage_df.loc[q_taxids], res[q], rank_thresholds, args, taxidmap.loc[s], lengths])
         # If diamond output has both taxonomy id and length then directly create the list of results to
         # feed into the multiprocessing pool
         else:
-            items.append([q, lineage_df, res[q], rank_thresholds, args, None, None])
+            # Get all taxids for query
+            q_taxids = list(set([res[q][i][-2] for i in range(0, len(res[q]))]).intersection(lineage_df.index))
+            items.append([q, lineage_df.loc[q_taxids], res[q], rank_thresholds, args, None, None])
     with Pool(processes=args.threads) as pool:
         res = list(tqdm.tqdm(pool.imap(process_queries, items, chunksize=args.chunksize), desc="Parsing queries",
                              total=total_queries, unit=" queries", ncols=100))
