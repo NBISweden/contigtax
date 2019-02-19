@@ -174,7 +174,7 @@ def main():
                                help="Diamond output file")
     search_parser.add_argument("-m", "--mode", type=str, choices=["blastx", "blastp"], default="blastx",
                                help="Choice of search mode for diamond: 'blastx' (default) for DNA query sequences "
-                               "or 'blastp' for amino acid query sequences")
+                                    "or 'blastp' for amino acid query sequences")
     search_parser.add_argument("-p", "--threads", default=1, type=int,
                                help="Threads to allocate for diamond")
     search_parser.add_argument("-b", "--blocksize", type=float, default=2.0,
@@ -190,45 +190,62 @@ def main():
     search_parser.set_defaults(func=run_diamond)
     # Assign parser
     assign_parser = subparser.add_parser("assign", help="Assigns taxonomy from diamond output")
+    assign_parser_input = assign_parser.add_argument_group("input")
+    assign_parser_output = assign_parser.add_argument_group("output")
+    assign_parser_mode = assign_parser.add_argument_group("run_mode")
+    assign_parser_performance = assign_parser.add_argument_group("performance")
     assign_parser.add_argument("diamond_results", type=str,
                                help="Diamond blastx results")
     assign_parser.add_argument("outfile", type=str,
                                help="Output file")
-    assign_parser.add_argument("--format", type=str, choices=["tango", "blast"], default="tango",
-                               help="Type of file format for diamond results. "
-                                    "blast=blast tabular output, "
-                                    "'tango'=blast tabular output with taxid and subject length in two last columns")
-    assign_parser.add_argument("--taxidmap", type=str,
-                               help="Provide custom protein to taxid mapfile.")
-    assign_parser.add_argument("--querylenmap", type=str,
-                               help="Provide query id to protein length mapfile. Lengths will be used to normalize\
-                                    the percent id of hits")
-    assign_parser.add_argument("--subjectlenmap", type=str,
-                               help="Provide subject id to protein length mapfile. Lengths will be used to normalize\
-                                        the percent id of hits")
-    assign_parser.add_argument("-m", "--mode", type=str, default="rank_lca", choices=['rank_lca', 'rank_vote', 'score'],
-                               help="Mode to use for parsing taxonomy: 'rank_lca' (default), 'rank_vote' or 'score'")
-    assign_parser.add_argument("-t", "--taxdir", type=str, default="./taxonomy",
-                               help="Directory specified during 'tango download taxonomy'. Defaults to taxonomy/.")
-    assign_parser.add_argument("--sqlitedb", type=str, default="taxonomy.sqlite",
-                                 help="Name of ete3 sqlite file to be created within --taxdir. Defaults to "
-                                      "'taxonomy.sqlite'")
-    assign_parser.add_argument("-T", "--top", type=int, default=10,
-                               help="Top percent of best score to consider hits for (default=10)")
-    assign_parser.add_argument("--nolen", action="store_true",
-                               help="Don't normalize percent id by (alignment length / subject length)")
-    assign_parser.add_argument("-r", "--ranks", nargs="+", default=["superkingdom", "phylum", "class", "order",
-                                                                    "family", "genus", "species"])
-    assign_parser.add_argument("-p", "--threads", type=int, default=1,
-                               help="Number of threads to use. Defaults to 1.")
-    assign_parser.add_argument("-c", "--chunksize", type=int, default=1,
-                               help="Size of chunks sent to process pool. For large input files using a large chunksize\
-                                can make the job complete much faster than using the default value of 1.")
-    assign_parser.add_argument("--rank_thresholds", nargs="+", default=[0.4, 0.42, 0.46, 0.5, 0.55, 0.6, 0.85])
-    assign_parser.add_argument("--vote_threshold", default=0.5, type=float,
-                               help="Minimum fraction required when voting on rank assignments.")
-    assign_parser.add_argument("--blobout", type=str,
-                               help="Output hits.tsv table compatible with blobtools")
+    assign_parser_input.add_argument("--format", type=str, choices=["tango", "blast"], default="tango",
+                                     help="Type of file format for diamond results. "
+                                          "blast=blast tabular output, "
+                                          "'tango'=blast tabular output with taxid and subject "
+                                          "length in two last columns")
+    assign_parser_input.add_argument("--taxidmap", type=str,
+                                     help="Provide custom protein to taxid mapfile.")
+    assign_parser_input.add_argument("--querylenmap", type=str,
+                                     help="Provide query id to protein length mapfile. Lengths will be used "
+                                          "to normalize the percent id of hits")
+    assign_parser_input.add_argument("--subjectlenmap", type=str,
+                                     help="Provide subject id to protein length mapfile. Lengths will be used "
+                                          "to normalize the percent id of hits")
+    assign_parser_input.add_argument("-t", "--taxdir", type=str, default="./taxonomy",
+                                     help="Directory specified during 'tango download taxonomy'. "
+                                          "Defaults to taxonomy/.")
+    assign_parser_input.add_argument("--sqlitedb", type=str, default="taxonomy.sqlite",
+                                     help="Name of ete3 sqlite file to be created within --taxdir. Defaults to "
+                                          "'taxonomy.sqlite'")
+    assign_parser_mode.add_argument("-m", "--mode", type=str, default="rank_lca",
+                                    choices=['rank_lca', 'rank_vote', 'score'],
+                                    help="Mode to use for parsing taxonomy: 'rank_lca' (default), "
+                                         "'rank_vote' or 'score'")
+    assign_parser_mode.add_argument("--assignranks", nargs="+", default=["phylum", "genus", "species"],
+                                    help="Ranks to use when assigning taxa. Defaults to phylum genus species")
+    assign_parser_mode.add_argument("--reportranks", nargs="+", default=["superkingdom", "phylum", "class", "order",
+                                                                         "family", "genus", "species"],
+                                    help="Ranks to report in output. Defaults to superkingom phylum class order"
+                                         "family genus species")
+    assign_parser_mode.add_argument("--rank_thresholds", nargs="+", default=[0.45, 0.6, 0.85],
+                                    help="Rank-specific thresholds corresponding to percent identity of a hit."
+                                         "Defaults to 0.45 (phylum), 0.6 (genus) and 0.85 (species)")
+    assign_parser_mode.add_argument("--vote_threshold", default=0.5, type=float,
+                                    help="Minimum fraction required when voting on rank assignments.")
+    assign_parser_mode.add_argument("-T", "--top", type=int, default=10,
+                                    help="Top percent of best score to consider hits for (default=10)")
+    assign_parser_mode.add_argument("--nolen", action="store_true",
+                                    help="Don't normalize percent id by (alignment length / subject length)")
+    assign_parser_performance.add_argument("-p", "--threads", type=int, default=1,
+                                           help="Number of threads to use. Defaults to 1.")
+    assign_parser_performance.add_argument("-c", "--chunksize", type=int, default=1,
+                                           help="Size of chunks sent to process pool. For large input files "
+                                                "using a large chunksize can make the job complete much faster "
+                                                "than using the default value of 1.")
+    assign_parser_output.add_argument("--blobout", type=str,
+                                      help="Output hits.tsv table compatible with blobtools")
+    assign_parser_output.add_argument("--taxidout", type=str,
+                                      help="Write output with taxonomy ids instead of taxonomy names to file")
     assign_parser.set_defaults(func=assign_taxonomy)
     args = parser.parse_args()
     args.func(args)

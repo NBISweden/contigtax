@@ -142,12 +142,13 @@ def propagate_lower(x, taxid, ranks):
     return pd.merge(x, pd.DataFrame(missing, index=[taxid]), left_index=True, right_index=True)
 
 
-def get_lca(r, ranks):
+def get_lca(r, assignranks, reportranks):
     """
     Assign lowest common ancestor from a set of taxids.
 
     :param r: Results for a single query, extracted from the main diamond results file
-    :param ranks: Taxonomic ranks to assign taxonomy for
+    :param assignranks: Taxonomic ranks to assign taxonomy for
+    :param reportranks: Taxonomic ranks to report taxonomy for
     :return: a tuple of dictionaries with ranks as keys and taxa names/ids as values
 
     This function takes a query-slice of the diamond results after filtering by score (and rank-threshold if tango mode
@@ -155,11 +156,17 @@ def get_lca(r, ranks):
     found at that rank. If there's only one taxid
     """
     query = r.index.unique()[0]
-    rev_ranks = [ranks[x] for x in list(range(len(ranks) - 1, -1, -1))]
-    for i, rank in enumerate(rev_ranks):
-        higher_ranks = rev_ranks[i:]
+    # Reverse ranks for iterating
+    rev_ranks = [assignranks[x] for x in list(range(len(assignranks) - 1, -1, -1))]
+    # Iterate through the assignranks
+    for rank in rev_ranks:
+        higher_ranks = reportranks[0:reportranks.index(rank) + 1]
+        lower_ranks = reportranks[reportranks.index(rank) + 1:]
         higher_rank_names = ["{}.name".format(x) for x in higher_ranks]
+        lower_rank_names = ["{}.name".format(x) for x in lower_ranks]
+        # Count number of taxa at rank
         c = r.groupby(rank).count()
+        # If there's only one taxa then we have found the LCA
         if len(c) == 1:
             if len(r) == 1:
                 lca = r.loc[query, higher_rank_names].values
@@ -171,13 +178,13 @@ def get_lca(r, ranks):
     return {}, {}
 
 
-def parse_with_rank_thresholds(r, ranks, rank_thresholds, mode, vote_threshold):
+def parse_with_rank_thresholds(r, assignranks, reportranks, rank_thresholds, mode, vote_threshold):
     """Performs parsing by iterating through the ranks in reverse, attempting to assign a taxonomy to lowest rank"""
     # Start from lowest rank
-    rev_ranks = [ranks[x] for x in list(range(len(ranks) - 1, -1, -1))]
-    for i, rank in enumerate(rev_ranks, start=0):
+    rev_ranks = [assignranks[x] for x in list(range(len(assignranks) - 1, -1, -1))]
+    for rank in rev_ranks:
         # Make sure that LCA is not set below current rank
-        allowed_ranks = rev_ranks[i:]
+        allowed_ranks = assignranks[0:assignranks.index(rank)+1]
         # Get rank threshold
         threshold = rank_thresholds[rank]
         # Filter results by rank threshold
@@ -191,14 +198,14 @@ def parse_with_rank_thresholds(r, ranks, rank_thresholds, mode, vote_threshold):
         lca_taxids = {}
         # After filtering, either calculate lca from all filtered taxids
         if mode == "rank_lca":
-            lca, lca_taxids = get_lca(_r, allowed_ranks)
+            lca, lca_taxids = get_lca(_r, allowed_ranks, reportranks)
         # Or at each rank, get most common taxid
         elif mode == "rank_vote":
             vote = get_rank_vote(_r, rank, vote_threshold)
             if len(vote) > 0:
                 lca, lca_taxids = get_lca(vote, allowed_ranks)
         if len(lca.keys()) > 0:
-            return lca, lca_taxids
+            return lca, lca_taxids, rank
     return {}, {}
 
 
@@ -345,7 +352,7 @@ def read_df(args):
                 queries[query] = min_score
             if score < min_score:
                 continue
-            if args.format == "tango" and len(items)==14:
+            if args.format == "tango" and len(items) == 14:
                 taxids.append(items[-2])
             elif args.format == "blast" and len(items) == 12:
                 if not args.taxidmap:
@@ -433,8 +440,8 @@ def process_queries(items):
     # Merge with lineage df
     res_df = pd.merge(res_df, lineage_df, left_on="staxids", right_index=True, how="left")
     # Initialize dictionaries
-    res_tax[query] = dict.fromkeys(args.ranks, "Unclassified")
-    res_taxids[query] = dict.fromkeys(args.ranks, -1)
+    res_tax[query] = dict.fromkeys(args.reportranks, "Unclassified")
+    res_taxids[query] = dict.fromkeys(args.reportranks, -1)
     # Handle queries that return pandas Series
     res_df = res_df.loc[res_df.bitscore >= thresholds[query]]
     res_df = series2df(res_df)
@@ -443,14 +450,14 @@ def process_queries(items):
     # Parse with rank thresholds or by just filtering by bitscore
     if "rank" in args.mode:
         if len(res_df.loc[res_df.normid >= min_rank_threshold]) > 0:
-            lca, lca_taxids = parse_with_rank_thresholds(res_df, args.ranks, rank_thresholds, args.mode,
-                                                         args.vote_threshold)
+            lca, lca_taxids, rank = parse_with_rank_thresholds(res_df, args.assignranks, args.reportranks,
+                                                               rank_thresholds, args.mode, args.vote_threshold)
     else:
-        lca, lca_taxids = get_lca(res_df, args.ranks)
+        lca, lca_taxids = get_lca(res_df, args.assignranks, args.reportranks)
     # Update results with lca and lca_taxids
     res_tax[query].update(lca)
     res_taxids[query].update(lca_taxids)
-    res_tax[query] = propagate_taxa(res_tax[query], args.ranks)
+    res_tax[query] = propagate_taxa(res_tax[query], args.reportranks)
     return res_tax[query], res_taxids[query], query
 
 
@@ -480,7 +487,7 @@ def parse_hits(args):
     """
     # Set up rank thresholds
     if "rank" in args.mode:
-        rank_thresholds = get_rank_thresholds(args.ranks, args.rank_thresholds)
+        rank_thresholds = get_rank_thresholds(args.assignranks, args.rank_thresholds)
     else:
         rank_thresholds = {}
     # Read diamond results
@@ -495,7 +502,7 @@ def parse_hits(args):
     else:
         taxids = ids
     # Create lineage dataframe
-    lineage_df = make_lineage_df(taxids, args.taxdir, args.sqlitedb, args.ranks, args.threads)
+    lineage_df = make_lineage_df(taxids, args.taxdir, args.sqlitedb, args.reportranks, args.threads)
     # Set up multiprocessing pool
     total_queries = len(res)
     items = []
@@ -531,19 +538,25 @@ def parse_hits(args):
     # Writes blobtools-compatible output
     if args.blobout:
         sys.stderr.write("Writing blobtools file to {}\n".format(args.blobout))
-        write_blobout(args.blobout, res_taxids, queries, args.ranks)
+        write_blobout(args.blobout, res_taxids, queries, args.reportranks)
+    # Write table with taxonomy ids instead of taxon names
+    if args.taxidout:
+        sys.stderr.write("Writing results with taxids to {}\n".format(args.taxidout))
+        res_taxid_df = pd.DataFrame(res_taxids, index=queries)[args.reportranks]
+        res_taxid_df.index.name = "query"
+        res_taxid_df.to_csv(args.taxidout, sep="\t")
     # Create dataframe from taxonomy table
-    res_df = pd.DataFrame(res_tax, index=queries)[args.ranks]
+    res_df = pd.DataFrame(res_tax, index=queries)[args.reportranks]
     res_df.index.name = "query"
     # Write main output
     sys.stderr.write("Writing main output to {}\n".format(args.outfile))
     res_df.to_csv(args.outfile, sep="\t")
     # Summary stats
-    unc = [len(res_df.loc[res_df.loc[:, rank].str.contains("Unclassified")]) for rank in args.ranks]
-    tot = [len(res_df)] * len(args.ranks)
+    unc = [len(res_df.loc[res_df.loc[:, rank].str.contains("Unclassified")]) for rank in args.reportranks]
+    tot = [len(res_df)] * len(args.reportranks)
     cl = 100 - np.divide(unc, tot) * 100
     cl = ["{}%".format(str(np.round(x, 1))) for x in cl]
-    summary = pd.DataFrame(cl, index=args.ranks)
+    summary = pd.DataFrame(cl, index=args.reportranks)
     sys.stderr.write("### SUMMARY ###:\nClassified sequences per rank:\n")
     summary.to_csv(sys.stderr, sep="\t", header=False)
     sys.stderr.write("\n")
