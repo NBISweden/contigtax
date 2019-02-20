@@ -20,23 +20,24 @@ import gzip as gz
 from tango.prepare import init_sqlite_taxdb
 
 
-def calculate_norm_id(df, nolen=False):
+def calculate_norm_id(df, normlen=False):
     """
     Calculates normalized identity for diamond results
     :param df: pandas DataFrame of diamond results
-    :param nolen: boolean specifying if percent id of a hit is to be normalized by length
+    :param normlen: boolean specifying if percent id of a hit is to be normalized by length
     :return: pandas DataFrame with an extra column 'normid'
 
-    If there is a column specifying length of either the query or the subject and if the user has not
-    explicitly set 'nolen' to True then the percent identity is normalized by the fraction of aligned positions:
+    If there is a column specifying length of either the query or the subject and if the user has
+    explicitly set 'normlen' to True then the percent identity is normalized by the fraction of aligned positions:
 
                                      alignment length
             normid = percent id x -----------------------
                                   subject or query length
-    If nolen = True then normid = percent id / 100
+
+    If normlen = False then normid = percent id / 100
     """
     # Normalize identity to aligned fraction if subject length is available
-    if "slen" in df.columns and nolen == False:
+    if "slen" in df.columns and normlen:
         # Create a new column that is: <alignment length>/<subject length> * <alignment identity>/100
         df = df.assign(lfrac=df.length.div(df.slen))
         # For hits where alignment length is greater than subject length, take the inverse
@@ -51,7 +52,8 @@ def calculate_norm_id(df, nolen=False):
 
 def get_thresholds(df, top=10):
     """
-    Here bit-score thresholds are calculated per query an returned in a dictionary
+    Here bit-score thresholds are calculated per query an returned in a dictionary.
+
     :param df: pandas DataFrame of diamond results
     :param top: Percentage range of top bitscore
     :return: dictionary with queries as keys and bitscore thresholds as values
@@ -72,11 +74,9 @@ def get_rank_thresholds(ranks, thresholds):
     :param thresholds: Thresholds for taxonomic ranks
     :return: Dictionary of thresholds
     """
-    rank_thresholds = {}
-    assert (len(thresholds) == len(ranks))
-    for i, rank in enumerate(ranks):
-        rank_thresholds[rank] = float(thresholds[i])
-    return rank_thresholds
+    if len(thresholds) != len(ranks):
+        sys.exit("ERROR: Number of taxonomic ranks and number of thresholds differ\n")
+    return dict(zip(ranks, thresholds))
 
 
 def add_names(x, taxid, ncbi_taxa):
@@ -142,12 +142,13 @@ def propagate_lower(x, taxid, ranks):
     return pd.merge(x, pd.DataFrame(missing, index=[taxid]), left_index=True, right_index=True)
 
 
-def get_lca(r, ranks):
+def get_lca(r, assignranks, reportranks):
     """
     Assign lowest common ancestor from a set of taxids.
 
     :param r: Results for a single query, extracted from the main diamond results file
-    :param ranks: Taxonomic ranks to assign taxonomy for
+    :param assignranks: Taxonomic ranks to assign taxonomy for
+    :param reportranks: Taxonomic ranks to report taxonomy for
     :return: a tuple of dictionaries with ranks as keys and taxa names/ids as values
 
     This function takes a query-slice of the diamond results after filtering by score (and rank-threshold if tango mode
@@ -155,11 +156,15 @@ def get_lca(r, ranks):
     found at that rank. If there's only one taxid
     """
     query = r.index.unique()[0]
-    rev_ranks = [ranks[x] for x in list(range(len(ranks) - 1, -1, -1))]
-    for i, rank in enumerate(rev_ranks):
-        higher_ranks = rev_ranks[i:]
+    # Reverse ranks for iterating
+    rev_ranks = [assignranks[x] for x in list(range(len(assignranks) - 1, -1, -1))]
+    # Iterate through the assignranks
+    for rank in rev_ranks:
+        higher_ranks = reportranks[0:reportranks.index(rank) + 1]
         higher_rank_names = ["{}.name".format(x) for x in higher_ranks]
+        # Count number of taxa at rank
         c = r.groupby(rank).count()
+        # If there's only one taxa then we have found the LCA
         if len(c) == 1:
             if len(r) == 1:
                 lca = r.loc[query, higher_rank_names].values
@@ -171,13 +176,13 @@ def get_lca(r, ranks):
     return {}, {}
 
 
-def parse_with_rank_thresholds(r, ranks, rank_thresholds, mode, vote_threshold):
+def parse_with_rank_thresholds(r, assignranks, reportranks, rank_thresholds, mode, vote_threshold):
     """Performs parsing by iterating through the ranks in reverse, attempting to assign a taxonomy to lowest rank"""
     # Start from lowest rank
-    rev_ranks = [ranks[x] for x in list(range(len(ranks) - 1, -1, -1))]
-    for i, rank in enumerate(rev_ranks, start=0):
+    rev_ranks = [assignranks[x] for x in list(range(len(assignranks) - 1, -1, -1))]
+    for rank in rev_ranks:
         # Make sure that LCA is not set below current rank
-        allowed_ranks = rev_ranks[i:]
+        allowed_ranks = assignranks[0:assignranks.index(rank) + 1]
         # Get rank threshold
         threshold = rank_thresholds[rank]
         # Filter results by rank threshold
@@ -191,18 +196,30 @@ def parse_with_rank_thresholds(r, ranks, rank_thresholds, mode, vote_threshold):
         lca_taxids = {}
         # After filtering, either calculate lca from all filtered taxids
         if mode == "rank_lca":
-            lca, lca_taxids = get_lca(_r, allowed_ranks)
+            lca, lca_taxids = get_lca(_r, allowed_ranks, reportranks)
         # Or at each rank, get most common taxid
         elif mode == "rank_vote":
             vote = get_rank_vote(_r, rank, vote_threshold)
             if len(vote) > 0:
-                lca, lca_taxids = get_lca(vote, allowed_ranks)
+                lca, lca_taxids = get_lca(vote, allowed_ranks, reportranks)
         if len(lca.keys()) > 0:
             return lca, lca_taxids
     return {}, {}
 
 
 def get_rank_vote(r, rank, vote_threshold=0.5):
+    """
+    Filter results based on fraction of taxa
+
+    :param r: Results for a single query, after filtering with bitscore and rank-specific thresholds
+    :param rank: Current rank being investigated
+    :param vote_threshold: Required fraction of hits from a single taxa in order to keep taxa
+    :return: Filtered dataframe only containing taxa that meet vote_threshold
+
+    Here taxa are counted among all hits remaining for a query after filtering using bitscore and rank-specific
+    thresholds. Taxa are counted at a certain rank and counts are normalized. Hits belonging to taxa above
+    vote_threshold are kept while others are filtered out.
+    """
     """Counts unique taxid from filtered dataframe and sums to current rank"""
     # Create dataframe for unique taxids filtered at this rank threshold
     taxid_counts = pd.DataFrame(dict.fromkeys(r.staxids.unique(), 1), index=["count"]).T
@@ -220,7 +237,13 @@ def get_rank_vote(r, rank, vote_threshold=0.5):
 
 
 def propagate_taxa(res, ranks):
-    """Sets unclassified lower ranks from best assignment at higher ranks"""
+    """
+    Transfer taxonomy names to unassigned ranks based on best known taxonomy
+
+    :param res: Dictionary of ranks and taxonomy names
+    :param ranks: Ranks to assign taxonomy to
+    :return: Dictionary with updated rank names
+    """
     known = ""
     for rank in ranks:
         if res[rank] == "Unclassified":
@@ -230,6 +253,23 @@ def propagate_taxa(res, ranks):
                 res[rank] = known
             else:
                 continue
+        else:
+            known = res[rank]
+    return res
+
+
+def propagate_taxids(res, ranks):
+    """
+    Transfer taxonomy ids to unassigned ranks based on best known taxonomy
+
+    :param res: Dictionary of ranks and taxonomy ids
+    :param ranks: Ranks to assign taxonomy to
+    :return: Dictionary with updated taxonomy ids
+    """
+    known = -1
+    for rank in ranks:
+        if res[rank] == -1 and known > 0:
+            res[rank] = -known
         else:
             known = res[rank]
     return res
@@ -345,7 +385,7 @@ def read_df(args):
                 queries[query] = min_score
             if score < min_score:
                 continue
-            if args.format == "tango" and len(items)==14:
+            if args.format == "tango" and len(items) == 14:
                 taxids.append(items[-2])
             elif args.format == "blast" and len(items) == 12:
                 if not args.taxidmap:
@@ -388,7 +428,7 @@ def make_lineage_df(taxids, taxdir, dbname, ranks, threads=1):
     lineages = ncbi_taxa.get_lineage_translator(taxids)
     # Get possible translations for taxids that have been changed
     _, translate_dict = ncbi_taxa._translate_merged(list(set(taxids).difference(lineages.keys())))
-    rename = {y:x for x,y in translate_dict.items()}
+    rename = {y: x for x, y in translate_dict.items()}
     # Update lineages with missing taxids
     lineages.update(ncbi_taxa.get_lineage_translator(translate_dict.values()))
     items = [[taxid, ranks, taxdir, dbname, lineages[taxid]] for taxid in list(lineages.keys())]
@@ -425,7 +465,7 @@ def process_queries(items):
         elif args.subjectlenmap:
             res_df = pd.merge(res_df, lengthmap, left_on="sseqid", right_index=True, how="left")
     # Calculate normalized %id for slice
-    res_df = calculate_norm_id(res_df, nolen=args.nolen)
+    res_df = calculate_norm_id(res_df, normlen=args.normlen)
     # Calculate bit score threshold for slice
     thresholds = get_thresholds(res_df, top=args.top)
     # Set index
@@ -433,8 +473,8 @@ def process_queries(items):
     # Merge with lineage df
     res_df = pd.merge(res_df, lineage_df, left_on="staxids", right_index=True, how="left")
     # Initialize dictionaries
-    res_tax[query] = dict.fromkeys(args.ranks, "Unclassified")
-    res_taxids[query] = dict.fromkeys(args.ranks, -1)
+    res_tax[query] = dict.fromkeys(args.reportranks, "Unclassified")
+    res_taxids[query] = dict.fromkeys(args.reportranks, -1)
     # Handle queries that return pandas Series
     res_df = res_df.loc[res_df.bitscore >= thresholds[query]]
     res_df = series2df(res_df)
@@ -443,14 +483,15 @@ def process_queries(items):
     # Parse with rank thresholds or by just filtering by bitscore
     if "rank" in args.mode:
         if len(res_df.loc[res_df.normid >= min_rank_threshold]) > 0:
-            lca, lca_taxids = parse_with_rank_thresholds(res_df, args.ranks, rank_thresholds, args.mode,
-                                                         args.vote_threshold)
+            lca, lca_taxids = parse_with_rank_thresholds(res_df, args.assignranks, args.reportranks,
+                                                         rank_thresholds, args.mode, args.vote_threshold)
     else:
-        lca, lca_taxids = get_lca(res_df, args.ranks)
+        lca, lca_taxids = get_lca(res_df, args.assignranks, args.reportranks)
     # Update results with lca and lca_taxids
     res_tax[query].update(lca)
     res_taxids[query].update(lca_taxids)
-    res_tax[query] = propagate_taxa(res_tax[query], args.ranks)
+    res_tax[query] = propagate_taxa(res_tax[query], args.reportranks)
+    res_taxids[query] = propagate_taxids(res_taxids[query], args.reportranks)
     return res_tax[query], res_taxids[query], query
 
 
@@ -480,7 +521,8 @@ def parse_hits(args):
     """
     # Set up rank thresholds
     if "rank" in args.mode:
-        rank_thresholds = get_rank_thresholds(args.ranks, args.rank_thresholds)
+        rank_thresholds = get_rank_thresholds(args.assignranks, args.rank_thresholds)
+        print(rank_thresholds)
     else:
         rank_thresholds = {}
     # Read diamond results
@@ -495,7 +537,7 @@ def parse_hits(args):
     else:
         taxids = ids
     # Create lineage dataframe
-    lineage_df = make_lineage_df(taxids, args.taxdir, args.sqlitedb, args.ranks, args.threads)
+    lineage_df = make_lineage_df(taxids, args.taxdir, args.sqlitedb, args.reportranks, args.threads)
     # Set up multiprocessing pool
     total_queries = len(res)
     items = []
@@ -506,7 +548,7 @@ def parse_hits(args):
             # Get all subject ids
             s = list(set([res[q][i][0] for i in range(0, len(res[q]))]).intersection(lineage_df.index))
             # Get all taxids for this query
-            q_taxids = taxidmap.loc[s,"staxids"].unique()
+            q_taxids = taxidmap.loc[s, "staxids"].unique()
             # Get lengths if specified by user
             if args.querylenmap:
                 lengths = lengthmap.loc[q]
@@ -531,19 +573,25 @@ def parse_hits(args):
     # Writes blobtools-compatible output
     if args.blobout:
         sys.stderr.write("Writing blobtools file to {}\n".format(args.blobout))
-        write_blobout(args.blobout, res_taxids, queries, args.ranks)
+        write_blobout(args.blobout, res_taxids, queries, args.reportranks)
+    # Write table with taxonomy ids instead of taxon names
+    if args.taxidout:
+        sys.stderr.write("Writing results with taxids to {}\n".format(args.taxidout))
+        res_taxid_df = pd.DataFrame(res_taxids, index=queries)[args.reportranks]
+        res_taxid_df.index.name = "query"
+        res_taxid_df.to_csv(args.taxidout, sep="\t")
     # Create dataframe from taxonomy table
-    res_df = pd.DataFrame(res_tax, index=queries)[args.ranks]
+    res_df = pd.DataFrame(res_tax, index=queries)[args.reportranks]
     res_df.index.name = "query"
     # Write main output
     sys.stderr.write("Writing main output to {}\n".format(args.outfile))
     res_df.to_csv(args.outfile, sep="\t")
     # Summary stats
-    unc = [len(res_df.loc[res_df.loc[:, rank].str.contains("Unclassified")]) for rank in args.ranks]
-    tot = [len(res_df)] * len(args.ranks)
+    unc = [len(res_df.loc[res_df.loc[:, rank].str.contains("Unclassified")]) for rank in args.reportranks]
+    tot = [len(res_df)] * len(args.reportranks)
     cl = 100 - np.divide(unc, tot) * 100
     cl = ["{}%".format(str(np.round(x, 1))) for x in cl]
-    summary = pd.DataFrame(cl, index=args.ranks)
+    summary = pd.DataFrame(cl, index=args.reportranks)
     sys.stderr.write("### SUMMARY ###:\nClassified sequences per rank:\n")
     summary.to_csv(sys.stderr, sep="\t", header=False)
     sys.stderr.write("\n")
