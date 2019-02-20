@@ -522,7 +522,6 @@ def parse_hits(args):
     # Set up rank thresholds
     if "rank" in args.mode:
         rank_thresholds = get_rank_thresholds(args.assignranks, args.rank_thresholds)
-        print(rank_thresholds)
     else:
         rank_thresholds = {}
     # Read diamond results
