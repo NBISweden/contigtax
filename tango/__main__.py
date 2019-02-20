@@ -227,15 +227,15 @@ def main():
                                                                          "family", "genus", "species"],
                                     help="Ranks to report in output. Defaults to superkingom phylum class order"
                                          "family genus species")
-    assign_parser_mode.add_argument("--rank_thresholds", nargs="+", default=[0.45, 0.6, 0.85],
+    assign_parser_mode.add_argument("--rank_thresholds", nargs="+", default=[0.45, 0.6, 0.8], type=float,
                                     help="Rank-specific thresholds corresponding to percent identity of a hit."
                                          "Defaults to 0.45 (phylum), 0.6 (genus) and 0.85 (species)")
     assign_parser_mode.add_argument("--vote_threshold", default=0.5, type=float,
                                     help="Minimum fraction required when voting on rank assignments.")
     assign_parser_mode.add_argument("-T", "--top", type=int, default=10,
                                     help="Top percent of best score to consider hits for (default=10)")
-    assign_parser_mode.add_argument("--nolen", action="store_true",
-                                    help="Don't normalize percent id by (alignment length / subject length)")
+    assign_parser_mode.add_argument("--normlen", action="store_true",
+                                    help="Normalize percent id by (alignment length / subject length)")
     assign_parser_performance.add_argument("-p", "--threads", type=int, default=1,
                                            help="Number of threads to use. Defaults to 1.")
     assign_parser_performance.add_argument("-c", "--chunksize", type=int, default=1,

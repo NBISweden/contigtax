@@ -20,23 +20,24 @@ import gzip as gz
 from tango.prepare import init_sqlite_taxdb
 
 
-def calculate_norm_id(df, nolen=False):
+def calculate_norm_id(df, normlen=False):
     """
     Calculates normalized identity for diamond results
     :param df: pandas DataFrame of diamond results
-    :param nolen: boolean specifying if percent id of a hit is to be normalized by length
+    :param normlen: boolean specifying if percent id of a hit is to be normalized by length
     :return: pandas DataFrame with an extra column 'normid'
 
-    If there is a column specifying length of either the query or the subject and if the user has not
-    explicitly set 'nolen' to True then the percent identity is normalized by the fraction of aligned positions:
+    If there is a column specifying length of either the query or the subject and if the user has
+    explicitly set 'normlen' to True then the percent identity is normalized by the fraction of aligned positions:
 
                                      alignment length
             normid = percent id x -----------------------
                                   subject or query length
-    If nolen = True then normid = percent id / 100
+
+    If normlen = False then normid = percent id / 100
     """
     # Normalize identity to aligned fraction if subject length is available
-    if "slen" in df.columns and nolen == False:
+    if "slen" in df.columns and normlen:
         # Create a new column that is: <alignment length>/<subject length> * <alignment identity>/100
         df = df.assign(lfrac=df.length.div(df.slen))
         # For hits where alignment length is greater than subject length, take the inverse
@@ -51,7 +52,8 @@ def calculate_norm_id(df, nolen=False):
 
 def get_thresholds(df, top=10):
     """
-    Here bit-score thresholds are calculated per query an returned in a dictionary
+    Here bit-score thresholds are calculated per query an returned in a dictionary.
+
     :param df: pandas DataFrame of diamond results
     :param top: Percentage range of top bitscore
     :return: dictionary with queries as keys and bitscore thresholds as values
@@ -72,11 +74,9 @@ def get_rank_thresholds(ranks, thresholds):
     :param thresholds: Thresholds for taxonomic ranks
     :return: Dictionary of thresholds
     """
-    rank_thresholds = {}
-    assert (len(thresholds) == len(ranks))
-    for i, rank in enumerate(ranks):
-        rank_thresholds[rank] = float(thresholds[i])
-    return rank_thresholds
+    if len(thresholds) != len(ranks):
+        sys.exit("ERROR: Number of taxonomic ranks and number of thresholds differ\n")
+    return dict(zip(ranks, thresholds))
 
 
 def add_names(x, taxid, ncbi_taxa):
@@ -161,9 +161,7 @@ def get_lca(r, assignranks, reportranks):
     # Iterate through the assignranks
     for rank in rev_ranks:
         higher_ranks = reportranks[0:reportranks.index(rank) + 1]
-        lower_ranks = reportranks[reportranks.index(rank) + 1:]
         higher_rank_names = ["{}.name".format(x) for x in higher_ranks]
-        lower_rank_names = ["{}.name".format(x) for x in lower_ranks]
         # Count number of taxa at rank
         c = r.groupby(rank).count()
         # If there's only one taxa then we have found the LCA
@@ -184,7 +182,7 @@ def parse_with_rank_thresholds(r, assignranks, reportranks, rank_thresholds, mod
     rev_ranks = [assignranks[x] for x in list(range(len(assignranks) - 1, -1, -1))]
     for rank in rev_ranks:
         # Make sure that LCA is not set below current rank
-        allowed_ranks = assignranks[0:assignranks.index(rank)+1]
+        allowed_ranks = assignranks[0:assignranks.index(rank) + 1]
         # Get rank threshold
         threshold = rank_thresholds[rank]
         # Filter results by rank threshold
@@ -203,13 +201,25 @@ def parse_with_rank_thresholds(r, assignranks, reportranks, rank_thresholds, mod
         elif mode == "rank_vote":
             vote = get_rank_vote(_r, rank, vote_threshold)
             if len(vote) > 0:
-                lca, lca_taxids = get_lca(vote, allowed_ranks)
+                lca, lca_taxids = get_lca(vote, allowed_ranks, reportranks)
         if len(lca.keys()) > 0:
-            return lca, lca_taxids, rank
+            return lca, lca_taxids
     return {}, {}
 
 
 def get_rank_vote(r, rank, vote_threshold=0.5):
+    """
+    Filter results based on fraction of taxa
+
+    :param r: Results for a single query, after filtering with bitscore and rank-specific thresholds
+    :param rank: Current rank being investigated
+    :param vote_threshold: Required fraction of hits from a single taxa in order to keep taxa
+    :return: Filtered dataframe only containing taxa that meet vote_threshold
+
+    Here taxa are counted among all hits remaining for a query after filtering using bitscore and rank-specific
+    thresholds. Taxa are counted at a certain rank and counts are normalized. Hits belonging to taxa above
+    vote_threshold are kept while others are filtered out.
+    """
     """Counts unique taxid from filtered dataframe and sums to current rank"""
     # Create dataframe for unique taxids filtered at this rank threshold
     taxid_counts = pd.DataFrame(dict.fromkeys(r.staxids.unique(), 1), index=["count"]).T
@@ -227,7 +237,13 @@ def get_rank_vote(r, rank, vote_threshold=0.5):
 
 
 def propagate_taxa(res, ranks):
-    """Sets unclassified lower ranks from best assignment at higher ranks"""
+    """
+    Transfer taxonomy names to unassigned ranks based on best known taxonomy
+
+    :param res: Dictionary of ranks and taxonomy names
+    :param ranks: Ranks to assign taxonomy to
+    :return: Dictionary with updated rank names
+    """
     known = ""
     for rank in ranks:
         if res[rank] == "Unclassified":
@@ -237,6 +253,23 @@ def propagate_taxa(res, ranks):
                 res[rank] = known
             else:
                 continue
+        else:
+            known = res[rank]
+    return res
+
+
+def propagate_taxids(res, ranks):
+    """
+    Transfer taxonomy ids to unassigned ranks based on best known taxonomy
+
+    :param res: Dictionary of ranks and taxonomy ids
+    :param ranks: Ranks to assign taxonomy to
+    :return: Dictionary with updated taxonomy ids
+    """
+    known = -1
+    for rank in ranks:
+        if res[rank] == -1 and known > 0:
+            res[rank] = -known
         else:
             known = res[rank]
     return res
@@ -395,7 +428,7 @@ def make_lineage_df(taxids, taxdir, dbname, ranks, threads=1):
     lineages = ncbi_taxa.get_lineage_translator(taxids)
     # Get possible translations for taxids that have been changed
     _, translate_dict = ncbi_taxa._translate_merged(list(set(taxids).difference(lineages.keys())))
-    rename = {y:x for x,y in translate_dict.items()}
+    rename = {y: x for x, y in translate_dict.items()}
     # Update lineages with missing taxids
     lineages.update(ncbi_taxa.get_lineage_translator(translate_dict.values()))
     items = [[taxid, ranks, taxdir, dbname, lineages[taxid]] for taxid in list(lineages.keys())]
@@ -432,7 +465,7 @@ def process_queries(items):
         elif args.subjectlenmap:
             res_df = pd.merge(res_df, lengthmap, left_on="sseqid", right_index=True, how="left")
     # Calculate normalized %id for slice
-    res_df = calculate_norm_id(res_df, nolen=args.nolen)
+    res_df = calculate_norm_id(res_df, normlen=args.normlen)
     # Calculate bit score threshold for slice
     thresholds = get_thresholds(res_df, top=args.top)
     # Set index
@@ -450,14 +483,15 @@ def process_queries(items):
     # Parse with rank thresholds or by just filtering by bitscore
     if "rank" in args.mode:
         if len(res_df.loc[res_df.normid >= min_rank_threshold]) > 0:
-            lca, lca_taxids, rank = parse_with_rank_thresholds(res_df, args.assignranks, args.reportranks,
-                                                               rank_thresholds, args.mode, args.vote_threshold)
+            lca, lca_taxids = parse_with_rank_thresholds(res_df, args.assignranks, args.reportranks,
+                                                         rank_thresholds, args.mode, args.vote_threshold)
     else:
         lca, lca_taxids = get_lca(res_df, args.assignranks, args.reportranks)
     # Update results with lca and lca_taxids
     res_tax[query].update(lca)
     res_taxids[query].update(lca_taxids)
     res_tax[query] = propagate_taxa(res_tax[query], args.reportranks)
+    res_taxids[query] = propagate_taxids(res_taxids[query], args.reportranks)
     return res_tax[query], res_taxids[query], query
 
 
@@ -488,6 +522,7 @@ def parse_hits(args):
     # Set up rank thresholds
     if "rank" in args.mode:
         rank_thresholds = get_rank_thresholds(args.assignranks, args.rank_thresholds)
+        print(rank_thresholds)
     else:
         rank_thresholds = {}
     # Read diamond results
@@ -513,7 +548,7 @@ def parse_hits(args):
             # Get all subject ids
             s = list(set([res[q][i][0] for i in range(0, len(res[q]))]).intersection(lineage_df.index))
             # Get all taxids for this query
-            q_taxids = taxidmap.loc[s,"staxids"].unique()
+            q_taxids = taxidmap.loc[s, "staxids"].unique()
             # Get lengths if specified by user
             if args.querylenmap:
                 lengths = lengthmap.loc[q]
