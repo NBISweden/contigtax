@@ -227,7 +227,7 @@ def main():
                                                                          "family", "genus", "species"],
                                     help="Ranks to report in output. Defaults to superkingom phylum class order"
                                          "family genus species")
-    assign_parser_mode.add_argument("--rank_thresholds", nargs="+", default=[0.45, 0.6, 0.8], type=float,
+    assign_parser_mode.add_argument("--rank_thresholds", nargs="+", default=[0.45, 0.6, 0.85], type=float,
                                     help="Rank-specific thresholds corresponding to percent identity of a hit."
                                          "Defaults to 0.45 (phylum), 0.6 (genus) and 0.85 (species)")
     assign_parser_mode.add_argument("--vote_threshold", default=0.5, type=float,
