@@ -26,23 +26,6 @@ import tqdm
 from glob import glob
 
 
-def progress(count, blocksize, totalsize):
-    """Prints progress on download to terminal"""
-    # Calculate percent and do some string formatting for constant output length
-    percent = round(count * blocksize * 100 / totalsize, 2)
-    l, d = len(str(percent).split(".")[0]), len(str(percent).split(".")[1])
-    percent = "{}{}{}".format((3-l)*" ", percent, (2-d)*"0")
-    # Calculate Mb downloaded so far and format string output
-    mb = round(count*blocksize/(1024**2), 2)
-    total_mb = round(totalsize / (1024**2), 2)
-    t = len(str(total_mb))
-    l, d = len(str(mb).split(".")[0]), len(str(mb).split(".")[1])
-    mb = "{}{}".format(mb, (2-d)*"0")
-    mb_l = len(mb)
-    msg = "({mb}/{tot} Mb){trail}".format(mb=mb, tot=total_mb, trail=" "*(t+3-mb_l))
-    sys.stderr.write("Downloading: {p}% complete {msg}\r".format(p=percent, mb=mb, msg=msg))
-    sys.stdout.flush()
-
 def my_hook(t):
     """Wraps tqdm instance.
     https://github.com/tqdm/tqdm/blob/master/examples/tqdm_wget.py
@@ -68,14 +51,14 @@ def my_hook(t):
     return update_to
 
 
-def setup_download_dirs(args):
+def setup_download_dirs(dldir, db, tmpdir):
     """Creates directories for downloading"""
-    if not args.dldir:
-        dldir = "./{db}".format(db=args.db)
+    if not dldir:
+        dldir = "./{db}".format(db=db)
     else:
-        dldir = os.path.expandvars(args.dldir)
-    if args.tmpdir:
-        tmpdir = os.path.expandvars(args.tmpdir)
+        dldir = os.path.expandvars(dldir)
+    if tmpdir:
+        tmpdir = os.path.expandvars(tmpdir)
         if not os.path.exists(tmpdir):
             os.makedirs(tmpdir)
     else:
@@ -91,6 +74,7 @@ def get_dl_status(fasta, force, skip_check):
     First the function checks if fastafile exists, then runs check_gzip to verify integrity.
     If either of these checks fails the function returns True signalling that download should proceed
     """
+
     if os.path.exists(fasta):
         if force:
             sys.stderr.write("Downloading because force=True\n")
@@ -115,44 +99,62 @@ def check_gzip(f):
 
     Runs gunzip -t on the file using subprocess. Returns True on returncode 0.
     """
+
     status = subprocess.run(["gzip", "-t", f], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if status.returncode == 0:
         return True
     return False
 
 
-def build_diamond_db(args):
-    """Runs diamond makedb
+def build_diamond_db(fastafile, taxonmap, taxonnodes, dbfile, cpus=1):
+    """Creates a diamond database
 
-    Builds a diamond database with taxonomy id mappings"""
-    fastadir = os.path.dirname(args.fastafile)
-    if not args.dbfile:
+    The diamond database is built with taxonomic information taken from the taxonmap file in the format of the
+    NCBI prot.accession2taxid.gz file:
+
+    accession	accession.version	taxid	gi
+    Q6GZX4	Q6GZX4	1	Q6GZX4
+    Q6GZX3	Q6GZX3	10486	Q6GZX3
+
+    Parameters
+    ----------
+    fastafile: str
+        Input fastafile
+    taxonmap: str
+        File mapping protein ids to taxids
+    taxonnodes: str
+        nodes.dmp file from NCBI taxonomy ftp (download with tango download taxonomy
+
+
+    """
+    fastadir = os.path.dirname(fastafile)
+    if not dbfile:
         dbfile = "{}/diamond.dmnd".format(fastadir)
     else:
-        dbfile = args.dbfile
+        dbfile = dbfile
     subprocess.run('gunzip -c {fastafile} | diamond makedb --taxonmap {taxonmap} --taxonnodes {taxonnodes} \
-                          -d {dbfile} -p {threads}'.format(fastafile=args.fastafile, taxonmap=args.taxonmap,
-                                                           taxonnodes=args.taxonnodes, dbfile=dbfile,
-                                                           threads=args.threads), shell=True)
+                          -d {dbfile} -p {cpus}'.format(fastafile=fastafile, taxonmap=taxonmap,
+                                                           taxonnodes=taxonnodes, dbfile=dbfile,
+                                                           cpus=cpus), shell=True)
     return 0
 
 
-def download_nr_idmap(args):
+def download_nr_idmap(dldir="./nr", tmpdir=False, force=False):
     """Downloads the nr protein to taxonomy id map"""
-    if not args.dldir:
+    if not dldir:
         dldir = "./nr"
     else:
-        dldir = args.dldir
+        dldir = dldir
     if not os.path.exists(dldir):
         os.makedirs(dldir)
-    if not args.tmpdir:
+    if not tmpdir:
         tmpdir = dldir
     else:
-        tmpdir = args.tmpdir
+        tmpdir = tmpdir
         if not os.path.exists(tmpdir):
             os.makedirs(tmpdir)
     if os.path.exists(os.path.join(dldir,"prot.accession2taxid.gz")):
-        if args.force:
+        if force:
             sys.stderr.write("Re-downloading idmap because force=True\n")
             pass
         else:
@@ -169,26 +171,26 @@ def download_nr_idmap(args):
     return 0
 
 
-def download_ncbi_taxonomy(args):
-    """Downloads the taxdump.tar.gz file from NCBI and unpacks it"""
-    if not os.path.exists(args.taxdir):
-        os.makedirs(args.taxdir)
-    if os.path.exists("{}/nodes.dmp".format(args.taxdir)) and os.path.exists("{}/names.dmp".format(args.taxdir)):
-        if args.force:
+def download_ncbi_taxonomy(taxdir="taxonomy", force=False):
+    """Downloads the taxdump.tar.gz file from NCBI and unpacks it in the specified directory"""
+    if not os.path.exists(taxdir):
+        os.makedirs(taxdir)
+    if os.path.exists("{}/nodes.dmp".format(taxdir)) and os.path.exists("{}/names.dmp".format(taxdir)):
+        if force:
             sys.stderr.write("Re-downloading because force=True\n")
             pass
         else:
             return 0
     url = "ftp://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
-    local = "{}/taxdump.tar.gz".format(args.taxdir)
+    local = "{}/taxdump.tar.gz".format(taxdir)
     sys.stderr.write("Downloading NCBI taxdump.tar.gz\n")
     with tqdm.tqdm(ncols=100, unit=" bytes") as t:
         reporthook = my_hook(t)
         urllib.request.urlretrieve(url, local, reporthook=reporthook)
     tar = tarfile.open(local, "r:gz")
     members = [tar.getmember(x) for x in ["nodes.dmp", "names.dmp"]]
-    sys.stderr.write("Extracting nodes.dmp and names.dmp to {}\n".format(args.taxdir))
-    tar.extractall(path=args.taxdir, members=members)
+    sys.stderr.write("Extracting nodes.dmp and names.dmp to {}\n".format(taxdir))
+    tar.extractall(path=taxdir, members=members)
     return 0
 
 
@@ -205,38 +207,60 @@ def init_sqlite_taxdb(taxdir, dbname):
     return ncbi_taxa
 
 
-def download_fasta(args):
-    """Downloads a Uniref fasta file
+def download_fasta(dldir, db, tmpdir=False, force=False, skip_check=False, skip_idmap=False):
+    """Downloads a protein fasta file
 
     If db is any of the 'UniRef' versions this function downloads a UniRef fasta file from ftp.uniprot.org/.
 
     If the specified db is 'nr' the latest available release of nr.gz file is downloaded from ftp.ncbi.nlm.nih.gov/.
     In this case, the protein accession mapfile is also downloaded.
+
+    Relase notes are also created in the same directory used to store the download
+
+    Parameters
+    ----------
+    dldir: str
+        Directory to use for download
+    db: str
+        Database to download. One of uniref100, uniref90, uniref50, nr.
+    tmpdir: str
+        Temporary directory to use for download.
+    force: bool
+        Should existing files be overwritten?
+    skip_check: bool
+        Skip checking integrity of download
+    skip_idmap: bool
+        Skip download of idmap file (only applies to nr)
+
+    Returns
+    -------
+    Exit code 0 or 1
     """
-    dldir, tmpdir = setup_download_dirs(args)
+
+    dldir, tmpdir = setup_download_dirs(dldir, db, tmpdir)
     # Local path to target
-    fasta = "{}/{}.fasta.gz".format(dldir, args.db)
-    tmp_fasta = "{}/{}.fasta.gz".format(os.path.expandvars(tmpdir), args.db)
-    release_note = "{}/{}.release_note".format(dldir, args.db)
-    if "uniref" in args.db:
+    fasta = "{}/{}.fasta.gz".format(dldir, db)
+    tmp_fasta = "{}/{}.fasta.gz".format(os.path.expandvars(tmpdir), db)
+    release_note = "{}/{}.release_note".format(dldir, db)
+    if "uniref" in db:
         url_base = "ftp://ftp.uniprot.org/pub/databases/uniprot/uniref"
-        url = "{base}/{db}/{db}.fasta.gz".format(base=url_base, db=args.db)
-        url_release_note = "{base}/{db}/{db}.release_note".format(base=url_base, db=args.db)
+        url = "{base}/{db}/{db}.fasta.gz".format(base=url_base, db=db)
+        url_release_note = "{base}/{db}/{db}.release_note".format(base=url_base, db=db)
         urllib.request.urlretrieve(url_release_note, release_note)
-    elif args.db == "nr":
+    elif db == "nr":
         url = "ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz"
         idmap_url = "ftp://ftp.ncbi.nih.gov/pub/taxonomy/accession2taxid/prot.accession2taxid.gz"
         with open(release_note, 'w') as fhout:
             timestamp = time.asctime(time.gmtime())
             fhout.write("Downloaded {}\n".format(timestamp))
     # Perform checks to see whether fasta file should be downloaded
-    dl = get_dl_status(fasta, args.force, args.skip_check)
+    dl = get_dl_status(fasta, force, skip_check)
     if dl:
         sys.stderr.write("Downloading {} to {}\n".format(url, tmp_fasta))
         with tqdm.tqdm(ncols=100, unit=" bytes") as t:
             reporthook = my_hook(t)
             urllib.request.urlretrieve(url, tmp_fasta, reporthook=reporthook)  # Download the fasta
-        if args.db == "nr" and not args.skip_idmap:
+        if db == "nr" and not skip_idmap:
             _idmap = "{}/prot.accession2taxid.gz".format(os.path.expandvars(tmpdir))
             idmap = "{}/prot.accession2taxid.gz".format(dldir)
             with tqdm.tqdm(ncols=100, unit=" bytes") as t:
@@ -276,7 +300,34 @@ def read_relase_notes(f):
 
 
 def parse_seqid(record):
-    """Parses sequence and taxids from fasta"""
+    """Parses sequence and taxids from fasta
+
+    UniRef records have the format 'UniRefxx_Q6GZX3' where xx is one of 100, 90 or 50. The fasta description for
+    these entries contain the lowest common taxonomic id for all sequences belonging to each uniref id:
+
+    Example:
+    >UniRef50_Q6GZX3 Uncharacterized protein 002L n=51 Tax=Iridoviridae TaxID=10486 RepID=002L_FRG3G
+
+    This function trims the 'UniRefxx' part and extracts the taxonomy id from the fasta description.
+
+    If the format doesn't correspond to UniRef (e.g. when the records are from 'nr' instead) the original sequence id
+    is returned instead.
+
+    Parameters
+    ----------
+    record: Bio.SeqRecord.SeqRecord
+        Sequence record as parsed using Bio.SeqIO.parse
+
+    Returns
+    -------
+    newid: str
+        Sequence identifier string
+    taxid: str
+        Taxonomy identifier string
+    db_type: str
+        Text string showing whether sequence is from a UniRef fasta file or not
+    """
+
     taxid = None
     if "UniRef" in record.id:
         db_type = "uniref"
@@ -291,16 +342,16 @@ def parse_seqid(record):
     return newid, taxid, db_type
 
 
-def setup_format_dirs(args):
+def setup_format_dirs(fastafile, reformatted, tmpdir):
     """Checks what directories and files to create for formatting"""
-    fastadir = os.path.dirname(args.fastafile)
-    formatdir = os.path.dirname(args.reformatted)
+    fastadir = os.path.dirname(fastafile)
+    formatdir = os.path.dirname(reformatted)
     if not os.path.exists(formatdir) and formatdir != "":
         os.makedirs(formatdir)
-    if not args.tmpdir:
+    if not tmpdir:
         tmpdir = formatdir
     else:
-        tmpdir = args.tmpdir
+        tmpdir = tmpdir
     tmpdir = os.path.expandvars(tmpdir)
     if not os.path.exists(tmpdir):
         os.makedirs(tmpdir)
@@ -312,20 +363,20 @@ def setup_format_dirs(args):
     return formatdir, tmpdir, n
 
 
-def update_idmap(args):
+def update_idmap(idfile, taxonmap, newfile):
     """Updates taxonmap ids
 
     If some sequence ids were too long (e.g. longer than 14 characters) the taxonmap file needs to be updated
     with the shorter sequence ids.
     """
     idmap = {}
-    sys.stderr.write("Reading idmap from {}\n".format(args.idfile))
-    with gz.open(args.idfile, 'rt') as fhin:
+    sys.stderr.write("Reading idmap from {}\n".format(idfile))
+    with gz.open(idfile, 'rt') as fhin:
         for line in fhin:
             old, new = line.rstrip().split("\t")
             idmap[old] = new
-    sys.stderr.write("Creating updated taxonmap {} from {}\n".format(args.newfile, args.taxonmap))
-    with gz.open(args.taxonmap, 'rt') as fhin, gz.open(args.newfile, 'wb') as fhout:
+    sys.stderr.write("Creating updated taxonmap {} from {}\n".format(newfile, taxonmap))
+    with gz.open(taxonmap, 'rt') as fhin, gz.open(newfile, 'wb') as fhout:
         s = "{}\t{}\t{}\t{}\n".format("accession", "accession.version", "taxid", "gi")
         fhout.write(s.encode())
         for i, line in enumerate(tqdm.tqdm(fhin, ncols=100, total=None, unit=" lines")):
@@ -343,38 +394,63 @@ def update_idmap(args):
 
 
 def write_idmap(s, fhidmap):
+    """Writes output to taxidmap file"""
     if fhidmap:
         fhidmap.write(s.encode())
     return
 
 
-def format_fasta(args):
+def format_fasta(fastafile, reformatted, tmpdir=False, force=False, taxidmap=False, forceidmap=False, maxidlen=14):
     """Reformats a protein fasta file and outputs taxidmap
 
-    Because diamond makedb requires protein accessions to be at most 14 characters
-    this function forces sequence ids to conform to this length.
+    The reformatting part includes stripping the 'UniRefxx' prefix from UniRef sequence ids. Taxonomy Ids are also
+    parsed from (UniRef) fasta headers and written to idmap.gz in the format used by NCBI for
+    the prot.accession2taxid.gz file.
 
-    Taxonomy Ids are also parsed from (UniRef) fasta headers and written to idmap.gz in the format used by NCBI
-    for the prot.accession2taxid.gz file.
+    Because diamond makedb requires protein accessions to be at most 14 characters this function forces sequence
+    ids to conform to this length by default.
+
+    Parameters
+    ----------
+    fastafile: str
+        Path to original fastafile
+    reformatted: str
+        Path to reformatted output
+    force: bool
+        Should existing reformatted output be overwritten?
+    tmpdir: str
+        Temporary directory to write reformatted fasta to
+    taxidmap: str
+        Path to store sequence->taxid map information. Defaults to 'prot.accession2taxid.gz' in same directory as
+        reformatted output.
+    forceidmap: bool
+        Should existing taxidmap be overwritten?
+    maxidlen: int
+        Maximum length of sequence ids.
+
+    Returns
+    -------
+    Exit code 0 upon successful completion
     """
-    if os.path.exists(args.reformatted) and not args.force:
-        sys.stderr.write("{} already exists. Specify '-f' to force overwrite\n".format(args.reformatted))
+
+    if os.path.exists(reformatted) and not force:
+        sys.stderr.write("{} already exists. Specify '-f' to force overwrite\n".format(reformatted))
         return 0
-    formatdir, tmpdir, n = setup_format_dirs(args)
+    formatdir, tmpdir, n = setup_format_dirs(fastafile, reformatted, tmpdir)
     if n < 0:
         N = None
     else:
         N = n
     # Fasta and reformatted fasta files
-    _fasta_r = "{}/{}".format(tmpdir, os.path.basename(args.reformatted))
+    _fasta_r = "{}/{}".format(tmpdir, os.path.basename(reformatted))
     # Mapping file with protein accessions to taxids
-    if not args.taxidmap:
+    if not taxidmap:
         mapfile = "{}/prot.accession2taxid.gz".format(formatdir)
         _mapfile = "{}/prot.accession2taxid.gz".format(tmpdir)
     else:
-        mapfile = args.taxidmap
-        _mapfile = "{}/{}".format(tmpdir, os.path.basename(args.taxidmap))
-    if args.forceidmap or not os.path.exists(mapfile):
+        mapfile = taxidmap
+        _mapfile = "{}/{}".format(tmpdir, os.path.basename(taxidmap))
+    if forceidmap or not os.path.exists(mapfile):
         fhidmap = gz.open(_mapfile, 'wb')
     else:
         sys.stderr.write("{} already exists.\n".format(mapfile))
@@ -385,13 +461,13 @@ def format_fasta(args):
     _idmapfile = "{}/idmap.tsv.gz".format(tmpdir)
     j = 1
     uniref = False
-    sys.stderr.write("Reformatting {}\n".format(args.fastafile))
-    with gz.open(args.fastafile, 'rt') as fhin, gz.open(_fasta_r, 'wb') as fhreformat:
+    sys.stderr.write("Reformatting {}\n".format(fastafile))
+    with gz.open(fastafile, 'rt') as fhin, gz.open(_fasta_r, 'wb') as fhreformat:
         idmap_string = "{}\t{}\t{}\t{}\n".format("accession", "accession.version", "taxid", "gi")
         write_idmap(idmap_string, fhidmap)
         for i, record in enumerate(tqdm.tqdm(parse(fhin, "fasta"), unit=" records", ncols=100, total=N)):
             newid, taxid, format = parse_seqid(record)
-            if len(newid) > args.maxidlen:
+            if len(newid) > maxidlen:
                 newid = "id{j}".format(j=j)
                 idmap[record.id] = newid
                 j += 1
@@ -410,7 +486,7 @@ def format_fasta(args):
     if uniref:
         move(_mapfile, mapfile)
     # Move reformmated fasta
-    move(_fasta_r, args.reformatted)
+    move(_fasta_r, reformatted)
     # Check if there are remapped sequences
     if len(idmap.keys()) > 0:
         with gz.open(_idmapfile, 'wb') as fhout:
@@ -419,7 +495,7 @@ def format_fasta(args):
                 fhout.write(line.encode())
         move(_idmapfile, idmapfile)
         sys.stderr.write("{}/{} sequence ids longer than {} characters written to {}\n".format(len(idmap), i,
-                                                                                               args.maxidlen, idmapfile))
+                                                                                               maxidlen, idmapfile))
         if not uniref:
             sys.stderr.write(
                 ">>>Make sure to update your prot.accession2taxid.gz file with updated ids. See 'tango update'<<<\n")

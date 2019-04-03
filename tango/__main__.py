@@ -22,14 +22,20 @@ import os
 
 
 def download(args):
-    """Handles downloading (fasta and NCBI taxonomy)"""
+    """Downloads fasta or taxonomy dump files
+
+    If args.db == 'taxonomy', download taxonomy dump files from ncbi and initialize the ete3 sqlite database
+    If args.db == 'idmap', download the seqid->taxid mapfile from ncbi
+    Otherwise download the protein fastafile corresponding to args.db (uniref50, uniref90, uniref100 or nr)
+    """
+
     if args.db == "taxonomy":
-        prepare.download_ncbi_taxonomy(args)
+        prepare.download_ncbi_taxonomy(args.taxdir, args.force)
         prepare.init_sqlite_taxdb(args.taxdir, args.sqlitedb)
     elif args.db == "idmap":
-        prepare.download_nr_idmap(args)
+        prepare.download_nr_idmap(args.dldir, args.tmpdir, args.force)
     else:
-        prepare.download_fasta(args)
+        prepare.download_fasta(args.dldir, args.db, args.tmpdir, args.force, args.skip_check, args.skip_idmap)
 
 
 def reformat(args):
@@ -40,7 +46,9 @@ def reformat(args):
     2. nodes.dmp and names.dmp must be supplied
     3. a prot.accession2taxid.gz file mapping protein ids to taxonomy ids must be supplied
     """
-    prepare.format_fasta(args)
+
+    prepare.format_fasta(args.fastafile, args.reformatted, args.tmpdir, args.force,
+                         args.taxidmap, args.forceidmap, args.maxidlen)
 
 
 def update(args):
@@ -49,12 +57,12 @@ def update(args):
     If protein accessions were too long these were remapped during the format stage. This requires a new
     map file to be created with the new (shorter) protein ids.
     """
-    prepare.update_idmap(args)
+    prepare.update_idmap(args.idfile, args.taxonmap, args.newfile)
 
 
 def build(args):
     """Builds the diamond database from downloaded fasta and taxonomy files"""
-    prepare.build_diamond_db(args)
+    prepare.build_diamond_db(args.fastafile, args.taxonmap, args.taxonnodes, args.dbfile, args.cpus)
 
 
 def run_diamond(args):
@@ -64,9 +72,6 @@ def run_diamond(args):
 
 def assign_taxonomy(args):
     """Parses diamond results and assigns taxonomy"""
-    # Check input
-    if args.querylenmap and args.subjectlenmap:
-        sys.exit("\nERROR: --querylenmap and --subjectlenmap can not both be specified\n")
     # Check outfile
     if os.path.isdir(args.outfile):
         sys.exit("\nERROR: Outfile {} is a directory\n".format(args.outfile))
@@ -74,9 +79,11 @@ def assign_taxonomy(args):
     if outdir != "" and not os.path.exists(outdir):
         os.makedirs(outdir)
     start_time = time()
-    sys.stderr.write("Assigning taxonomy with {} threads\n".format(args.threads))
+    sys.stderr.write("Assigning taxonomy with {} cpus\n".format(args.cpus))
     # Parse diamond file
-    assign.parse_hits(args)
+    assign.parse_hits(args.diamond_results, args.outfile, args.taxidout, args.blobout, args.top, args.evalue,
+                      args.format, args.taxidmap, args.mode, args.vote_threshold, args.assignranks, args.reportranks,
+                      args.rank_thresholds, args.taxdir, args.sqlitedb, args.chunksize, args.cpus)
     end_time = time()
     run_time = round(end_time - start_time, 1)
     sys.stderr.write("Total time: {}s\n".format(run_time))
@@ -123,6 +130,8 @@ def main():
                                  help="Overwrite downloaded files")
     download_parser.add_argument("--skip_check", action="store_true",
                                  help="Skip check of downloaded fasta file. Default: False")
+    download_parser.add_argument("--skip_idmap", action="store_true",
+                                 help="Skip download of seqid->taxid mapfile (only applies to 'nr' database.")
     download_parser.set_defaults(func=download)  # Call download function with arguments
     # Format parser
     format_parser = subparser.add_parser("format", help="Format fasta file for diamond and create protein2taxid map")
@@ -161,8 +170,8 @@ def main():
     build_parser.add_argument("taxonnodes", help="nodes.dmp file from NCBI taxonomy database")
     build_parser.add_argument("-d", "--dbfile", help="Name of diamond database file. Defaults to diamond.dmnd in \
                               same directory as the protein fasta file")
-    build_parser.add_argument("-p", "--threads", type=int, default=1,
-                              help="Number of threads to use when building (defaults to 1)")
+    build_parser.add_argument("-p", "--cpus", type=int, default=1,
+                              help="Number of cpus to use when building (defaults to 1)")
     build_parser.set_defaults(func=build)  # Call build function with arguments
     # Search parser
     search_parser = subparser.add_parser("search", help="Run diamond blastx with nucleotide fasta file")
@@ -175,16 +184,18 @@ def main():
     search_parser.add_argument("-m", "--mode", type=str, choices=["blastx", "blastp"], default="blastx",
                                help="Choice of search mode for diamond: 'blastx' (default) for DNA query sequences "
                                     "or 'blastp' for amino acid query sequences")
-    search_parser.add_argument("-p", "--threads", default=1, type=int,
-                               help="Threads to allocate for diamond")
+    search_parser.add_argument("-p", "--cpus", default=1, type=int,
+                               help="Number of cpus to use for diamond")
     search_parser.add_argument("-b", "--blocksize", type=float, default=2.0,
                                help="Sequence block size in billions of letters (default=2.0). Set to 20 on clusters")
     search_parser.add_argument("-c", "--chunks", type=int, default=4,
                                help="Number of chunks for index processing (default=4)")
     search_parser.add_argument("--top", type=int, default=10,
-                               help="report alignments within this percentage range of top alignment score (default=10)")
+                               help="Report alignments within this percentage range of top bitscore (default=10)")
     search_parser.add_argument("-e", "--evalue", default=0.001, type=float,
                                help="maximum e-value to report alignments (default=0.001)")
+    search_parser.add_argument("-l", "--minlen", type=int, default=None,
+                               help="Minimum length of queries. Shorter queries will be filtered prior to search.")
     search_parser.add_argument("-t", "--tmpdir", type=str,
                                help="directory for temporary files")
     search_parser.set_defaults(func=run_diamond)
@@ -201,16 +212,9 @@ def main():
     assign_parser_input.add_argument("--format", type=str, choices=["tango", "blast"], default="tango",
                                      help="Type of file format for diamond results. "
                                           "blast=blast tabular output, "
-                                          "'tango'=blast tabular output with taxid and subject "
-                                          "length in two last columns")
+                                          "'tango'=blast tabular output with taxid in 12th column"),
     assign_parser_input.add_argument("--taxidmap", type=str,
                                      help="Provide custom protein to taxid mapfile.")
-    assign_parser_input.add_argument("--querylenmap", type=str,
-                                     help="Provide query id to protein length mapfile. Lengths will be used "
-                                          "to normalize the percent id of hits")
-    assign_parser_input.add_argument("--subjectlenmap", type=str,
-                                     help="Provide subject id to protein length mapfile. Lengths will be used "
-                                          "to normalize the percent id of hits")
     assign_parser_input.add_argument("-t", "--taxdir", type=str, default="./taxonomy",
                                      help="Directory specified during 'tango download taxonomy'. "
                                           "Defaults to taxonomy/.")
@@ -227,17 +231,17 @@ def main():
                                                                          "family", "genus", "species"],
                                     help="Ranks to report in output. Defaults to superkingom phylum class order"
                                          "family genus species")
-    assign_parser_mode.add_argument("--rank_thresholds", nargs="+", default=[0.45, 0.6, 0.85], type=float,
+    assign_parser_mode.add_argument("--rank_thresholds", nargs="+", default=[45, 60, 85], type=int,
                                     help="Rank-specific thresholds corresponding to percent identity of a hit."
-                                         "Defaults to 0.45 (phylum), 0.6 (genus) and 0.85 (species)")
+                                         "Defaults to 45 (phylum), 60 (genus) and 85 (species)")
     assign_parser_mode.add_argument("--vote_threshold", default=0.5, type=float,
                                     help="Minimum fraction required when voting on rank assignments.")
-    assign_parser_mode.add_argument("-T", "--top", type=int, default=10,
-                                    help="Top percent of best score to consider hits for (default=10)")
-    assign_parser_mode.add_argument("--normlen", action="store_true",
-                                    help="Normalize percent id by (alignment length / subject length)")
-    assign_parser_performance.add_argument("-p", "--threads", type=int, default=1,
-                                           help="Number of threads to use. Defaults to 1.")
+    assign_parser_mode.add_argument("-T", "--top", type=int, default=5,
+                                    help="Top percent of best score to consider hits for (default=5)")
+    assign_parser_mode.add_argument("-e", "--evalue", type=float, default=0.001,
+                                    help="Maximum e-value to store hits. Default 0.001")
+    assign_parser_performance.add_argument("-p", "--cpus", type=int, default=1,
+                                           help="Number of cpus to use. Defaults to 1.")
     assign_parser_performance.add_argument("-c", "--chunksize", type=int, default=1,
                                            help="Size of chunks sent to process pool. For large input files "
                                                 "using a large chunksize can make the job complete much faster "
