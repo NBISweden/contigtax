@@ -124,9 +124,8 @@ def build_diamond_db(fastafile, taxonmap, taxonnodes, dbfile, cpus=1):
         File mapping protein ids to taxids
     taxonnodes: str
         nodes.dmp file from NCBI taxonomy ftp (download with tango download taxonomy
-
-
     """
+
     fastadir = os.path.dirname(fastafile)
     if not dbfile:
         dbfile = "{}/diamond.dmnd".format(fastadir)
@@ -263,6 +262,7 @@ def download_fasta(dldir, db, tmpdir=False, force=False, skip_check=False, skip_
         if db == "nr" and not skip_idmap:
             _idmap = "{}/prot.accession2taxid.gz".format(os.path.expandvars(tmpdir))
             idmap = "{}/prot.accession2taxid.gz".format(dldir)
+            sys.stderr.write("Downloading taxidmap from {}\n".format(idmap_url))
             with tqdm.tqdm(ncols=100, unit=" bytes") as t:
                 reporthook = my_hook(t)
                 urllib.request.urlretrieve(idmap_url, _idmap, reporthook=reporthook)  # Download the nr idmap
@@ -480,8 +480,9 @@ def format_fasta(fastafile, reformatted, tmpdir=False, force=False, taxidmap=Fal
             fasta_string = ">{}\n{}\n".format(newid, str(record.seq))  # Write record with new id
             fhreformat.write(fasta_string.encode())
     sys.stderr.write("{}/{} records parsed\n".format(i, i))
-    # Close idmap file handle
-    fhidmap.close()
+    # Close idmap file handle if
+    if fhidmap:
+        fhidmap.close()
     # If uniref database the mapfile has been created during reformatting
     if uniref:
         move(_mapfile, mapfile)
