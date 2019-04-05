@@ -67,7 +67,8 @@ def build(args):
 
 def run_diamond(args):
     """Runs diamond blastx against target database"""
-    search.diamond(args)
+    search.diamond(args.query, args.outfile, args.dbfile, args.mode, args.cpus, args.evalue, args.blocksize,
+                   args.chunks, args.tmpdir, args.minlen)
 
 
 def assign_taxonomy(args):
