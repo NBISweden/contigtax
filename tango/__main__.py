@@ -67,7 +67,7 @@ def build(args):
 
 def run_diamond(args):
     """Runs diamond blastx against target database"""
-    search.diamond(args.query, args.outfile, args.dbfile, args.mode, args.cpus, args.evalue, args.blocksize,
+    search.diamond(args.query, args.outfile, args.dbfile, args.mode, args.cpus, args.evalue, args.top, args.blocksize,
                    args.chunks, args.tmpdir, args.minlen)
 
 
@@ -191,7 +191,7 @@ def main():
                                help="Sequence block size in billions of letters (default=2.0). Set to 20 on clusters")
     search_parser.add_argument("-c", "--chunks", type=int, default=4,
                                help="Number of chunks for index processing (default=4)")
-    search_parser.add_argument("--top", type=int, default=10,
+    search_parser.add_argument("-T", "--top", type=int, default=10,
                                help="Report alignments within this percentage range of top bitscore (default=10)")
     search_parser.add_argument("-e", "--evalue", default=0.001, type=float,
                                help="maximum e-value to report alignments (default=0.001)")

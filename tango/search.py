@@ -67,7 +67,7 @@ def filter_seqs_by_len(infile, outfile, minlen):
     sys.stderr.write("{} sequences longer than {} written to {}\n".format(i, minlen, outfile))
 
 
-def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, blocksize=2.0, chunks=4,
+def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, top=10, blocksize=2.0, chunks=4,
             tmpdir=False, minlen=False):
     """Runs diamond blast with query file
 
@@ -88,6 +88,8 @@ def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, blocksi
         Number of cpus to use for diamond
     evalue: float
         Maximum allowed e-value to report hits for
+    top: int
+        Keep hits within top percent of best scoring hit
     blocksize: float
         Sequence block size in billions of letters (default=2.0). Set to 20 on clusters.
     chunks: int
