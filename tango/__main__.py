@@ -16,9 +16,11 @@ from argparse import ArgumentParser
 from tango import prepare
 from tango import search
 from tango import assign
+from tango import transfer
 from time import time
 import sys
 import os
+import pandas as pd
 
 
 def download(args):
@@ -85,6 +87,24 @@ def assign_taxonomy(args):
     assign.parse_hits(args.diamond_results, args.outfile, args.taxidout, args.blobout, args.top, args.evalue,
                       args.format, args.taxidmap, args.mode, args.vote_threshold, args.assignranks, args.reportranks,
                       args.rank_thresholds, args.taxdir, args.sqlitedb, args.chunksize, args.cpus)
+    end_time = time()
+    run_time = round(end_time - start_time, 1)
+    sys.stderr.write("Total time: {}s\n".format(run_time))
+
+
+def transfer_taxonomy(args):
+    """Transfers taxonomy from ORFs to contigs"""
+    # Read taxonomy df
+    df = pd.read_csv(args.orf_taxonomy, sep="\t", header=0, index_col=0)
+    orf_df_out = False
+    if args.orf_tax_out:
+        orf_df_out = True
+    start_time = time()
+    contig_df, orf_df = transfer.transfer_taxonomy(df, args.gff, args.ignore_unc_rank, args.cpus, args.chunksize,
+                                                   orf_df_out)
+    contig_df.to_csv(args.contig_taxonomy, sep="\t", index=True, header=True)
+    if orf_df_out:
+        orf_df.to_csv(args.orf_tax_out, sep="\t", index=True, header=True)
     end_time = time()
     run_time = round(end_time - start_time, 1)
     sys.stderr.write("Total time: {}s\n".format(run_time))
@@ -252,6 +272,25 @@ def main():
     assign_parser_output.add_argument("--taxidout", type=str,
                                       help="Write output with taxonomy ids instead of taxonomy names to file")
     assign_parser.set_defaults(func=assign_taxonomy)
+    # Transfer parser
+    transfer_parser = subparser.add_parser("transfer", help="Transfer taxonomy from ORFs to contigs")
+    transfer_parser.add_argument("orf_taxonomy", type=str,
+                                 help="Taxonomy assigned to ORFs (ORF ids in first column)")
+    transfer_parser.add_argument("gff", type=str,
+                                 help="GFF or file with contig id in first column and ORF id in second column")
+    transfer_parser.add_argument("contig_taxonomy", type=str,
+                                 help="Output file with assigned taxonomy for contigs")
+    transfer_parser.add_argument("--ignore_unc_rank", type=str, default=None,
+                                 help="Ignore ORFs unclassified at <rank>")
+    transfer_parser.add_argument("--orf_tax_out", type=str,
+                                 help="Also transfer taxonomy back to ORFs and output to file")
+    transfer_parser.add_argument("-p", "--cpus", type=int, default=1,
+                                 help="Number of cpus to use when transferring taxonomy to contigs")
+    transfer_parser.add_argument("-c", "--chunksize", type=int, default=1,
+                                 help="Size of chunks sent to process pool. For large input files "
+                                      "using a large chunksize can make the job complete much faster "
+                                      "than using the default value of 1.")
+    transfer_parser.set_defaults(func=transfer_taxonomy)
     args = parser.parse_args()
     args.func(args)
 
