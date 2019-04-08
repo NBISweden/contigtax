@@ -782,23 +782,3 @@ def parse_hits(diamond_results, outfile, taxidout=False, blobout=False, top=10, 
     summary.to_csv(sys.stderr, sep="\t", header=False)
     sys.stderr.write("\n")
     return 0
-
-
-def transfer_taxonomy(df, gff, prodigal=True, ignore_unclassified=False):
-    """
-
-    :param df:
-    :param bedfile:
-    :param ignore_unclassified:
-    :return:
-    """
-
-    # Read the gff
-    if prodigal:
-        gff_df = pd.read_csv(gff, header=None, sep="\t", comment="#", usecols=[0,8], names=["contig","id"])
-        ids = ["{}_{}".format(gff_df.loc[i, "contig"], gff_df.loc[i, "id"].split(";")[0].split("_")[-1]) for i in
-           gff_df.index]
-        gff_df.loc[:,"id"] = ids
-    else:
-        gff_df = pd.read_csv(gff, header=None, sep="\t", usecols=[0,1], names=["contig","id"])
-
