@@ -540,7 +540,7 @@ def make_lineage_df(taxids, taxdir, dbname, ranks, cpus=1):
     lineage_df.rename(index=lambda x: int(x), inplace=True)
     if len(missing_taxids) > 0:
         sys.stderr.write("#WARNING: Missing taxids found:\n")
-        sys.stderr.write("#{}\n".format(",".join(missing_taxids)))
+        sys.stderr.write("#{}\n".format(",".join([str(x) for x in missing_taxids])))
         sys.stderr.write("#To fix this, you can try to update the taxonomy database using\n")
         sys.stderr.write("#tango download taxonomy --force\n")
     return lineage_df
