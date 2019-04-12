@@ -33,7 +33,7 @@ def download(args):
 
     if args.db == "taxonomy":
         prepare.download_ncbi_taxonomy(args.taxdir, args.force)
-        prepare.init_sqlite_taxdb(args.taxdir, args.sqlitedb)
+        prepare.init_sqlite_taxdb(args.taxdir, args.sqlitedb, args.force)
     elif args.db == "idmap":
         prepare.download_nr_idmap(args.dldir, args.tmpdir, args.force)
     else:

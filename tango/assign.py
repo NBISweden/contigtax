@@ -523,6 +523,8 @@ def make_lineage_df(taxids, taxdir, dbname, ranks, cpus=1):
     # Read the taxonomy db
     ncbi_taxa = init_sqlite_taxdb(taxdir, dbname)
     lineages = ncbi_taxa.get_lineage_translator(taxids)
+    # Store potential missing taxids and warn user
+    missing_taxids = set([int(x) for x in taxids]).difference(lineages.keys())
     # Get possible translations for taxids that have been changed
     _, translate_dict = ncbi_taxa._translate_merged(list(set(taxids).difference(lineages.keys())))
     rename = {y: x for x, y in translate_dict.items()}
@@ -536,6 +538,11 @@ def make_lineage_df(taxids, taxdir, dbname, ranks, cpus=1):
     lineage_df = pd.concat(res, sort=False)
     lineage_df.rename(index=rename, inplace=True)
     lineage_df.rename(index=lambda x: int(x), inplace=True)
+    if len(missing_taxids) > 0:
+        sys.stderr.write("#WARNING: Missing taxids found:\n")
+        sys.stderr.write("#{}\n".format(",".join(missing_taxids)))
+        sys.stderr.write("#To fix this, you can try to update the taxonomy database using\n")
+        sys.stderr.write("#tango download taxonomy --force\n")
     return lineage_df
 
 
@@ -561,6 +568,8 @@ def process_queries(args):
     res_df.index.name = "qseqid"
     # Merge with lineage df
     res_df = pd.merge(res_df, lineage_df, left_on="staxids", right_index=True, how="left")
+    # Remove potential nan rows created if the blast results have taxids that are missing from lineage_df
+    res_df = res_df.loc[res_df[reportranks[0]] == res_df[reportranks[0]]]
     # Initialize dictionaries
     res_tax[query] = dict.fromkeys(reportranks, "Unclassified")
     res_taxids[query] = dict.fromkeys(reportranks, -1)

@@ -193,11 +193,11 @@ def download_ncbi_taxonomy(taxdir="taxonomy", force=False):
     return 0
 
 
-def init_sqlite_taxdb(taxdir, dbname):
+def init_sqlite_taxdb(taxdir, dbname, force=False):
     """Creates ete3 sqlite database"""
     taxdump_file = os.path.join(taxdir,"taxdump.tar.gz")
     dbfile = os.path.join(taxdir, dbname)
-    if not os.path.exists(taxdump_file) or os.path.exists(dbfile):
+    if not os.path.exists(taxdump_file) or os.path.exists(dbfile) and not force:
         taxdump_file = None
     if not os.path.exists(taxdir):
         os.makedirs(taxdir)
