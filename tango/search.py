@@ -62,7 +62,7 @@ def filter_seqs_by_len(infile, outfile, minlen):
     i = 0
     for record in tqdm.tqdm(parse(infile, 'fasta'), unit=" sequences", ncols=100, desc="Filtering sequences"):
         if len(record) >= minlen:
-            write(record, q, "fasta")
+            write(record, outfile, "fasta")
             i += 1
     sys.stderr.write("{} sequences longer than {} written to {}\n".format(i, minlen, outfile))
 
