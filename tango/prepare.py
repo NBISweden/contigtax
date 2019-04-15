@@ -473,6 +473,8 @@ def format_fasta(fastafile, reformatted, tmpdir=False, force=False, taxidmap=Fal
                 j += 1
             # Skip UniRef entries with no taxid
             if format == "uniref":
+                if not uniref:
+                    uniref = True
                 if not taxid:
                     continue
                 idmap_string = "{}\t{}\t{}\t{}\n".format(newid, newid, taxid, newid)  # Write newid to taxid mapping
