@@ -92,15 +92,16 @@ def add_names(x, taxid, ncbi_taxa):
     for rank in list(x.columns):
         # Get taxid for the current rank
         t = x.loc[taxid, rank]
-        # If taxid is negative it means that there is now classified taxonomy at this rank
-        # Instead we get the last known name in the hierarchy and use that name with the 'Unclassified' prefix
-        # unless the name is 'root' in which case we just use 'Unclassified'
+        # If taxid is negative it means that there is no classified taxonomy at this rank
+        # Instead we get the last known name in the hierarchy. We can then use the negative values to translate into
+        # the name with the "Unclassified." prefix.
+        # If the name is 'root' we just use 'Unclassified'
         if t < 0:
             known_name = names[-t]
             if known_name == "root":
                 name = "Unclassified"
             else:
-                name = "{}.{}".format("Unclassified", known_name)
+                name = known_name
         # If taxid is positive we just use the name from the dictionary
         else:
             name = names[t]
@@ -182,13 +183,11 @@ def get_lca(r, assignranks, reportranks):
         # If there's only one taxa then we have found the LCA
         if len(c) == 1:
             if len(r) == 1:
-                lca = r.loc[query, higher_rank_names].values
                 lca_taxids = r.loc[query, higher_ranks].values
             else:
-                lca = r.loc[query, higher_rank_names].values[0]
                 lca_taxids = r.loc[query, higher_ranks].values[0]
-            return dict(zip(higher_ranks, lca)), dict(zip(higher_ranks, lca_taxids))
-    return {}, {}
+            return dict(zip(higher_ranks, lca_taxids))
+    return {}
 
 
 def parse_with_rank_thresholds(r, assignranks, reportranks, rank_thresholds, mode, vote_threshold):
@@ -241,19 +240,18 @@ def parse_with_rank_thresholds(r, assignranks, reportranks, rank_thresholds, mod
             continue
         if len(_r) == 0:
             continue
-        lca = {}
         lca_taxids = {}
         # After filtering, either calculate lca from all filtered taxids
         if mode == "rank_lca":
-            lca, lca_taxids = get_lca(_r, allowed_ranks, reportranks)
+            lca_taxids = get_lca(_r, allowed_ranks, reportranks)
         # Or at each rank, get most common taxid
         elif mode == "rank_vote":
             vote = get_rank_vote(_r, rank, vote_threshold)
             if len(vote) > 0:
-                lca, lca_taxids = get_lca(vote, allowed_ranks, reportranks)
-        if len(lca.keys()) > 0:
-            return lca, lca_taxids
-    return {}, {}
+                lca_taxids = get_lca(vote, allowed_ranks, reportranks)
+        if len(lca_taxids.keys()) > 0:
+            return lca_taxids
+    return {}
 
 
 def get_rank_vote(r, rank, vote_threshold=0.5):
@@ -500,6 +498,31 @@ def process_lineages(items):
     return x
 
 
+def make_name_dict(df, ranks):
+    """
+    Creates a dictionary of taxids to taxonomy names, including Unclassified ranks
+
+    Parameters
+    ----------
+    df: pandas.DataFrame
+        Lineage dataframe
+    ranks: list
+        Ranks to store names information for
+
+    Returns
+    -------
+    name_dict: dict
+        Name dictionary mapping taxonomy ids to names
+    """
+
+    name_dict = {}
+    for rank in ranks:
+        name_dict.update(dict(zip(df[rank].values, df["{}.name".format(rank)].values)))
+        name_dict.update(dict(zip(-abs(df[rank]), "Unclassified." + df["{}.name".format(rank)])))
+    name_dict[-1] = "Unclassified"
+    return name_dict
+
+
 def make_lineage_df(taxids, taxdir, dbname, ranks, cpus=1):
     """
     Creates a lineage dataframe with full taxonomic information for a list of taxids.
@@ -548,17 +571,17 @@ def make_lineage_df(taxids, taxdir, dbname, ranks, cpus=1):
     lineage_df.rename(index=lambda x: int(x), inplace=True)
     for rank in ranks:
         lineage_df[rank] = pd.to_numeric(lineage_df[rank])
+    name_dict = make_name_dict(lineage_df, ranks)
     if len(missing_taxids) > 0:
         sys.stderr.write("#WARNING: Missing taxids found:\n")
         sys.stderr.write("#{}\n".format(",".join([str(x) for x in missing_taxids])))
         sys.stderr.write("#To fix this, you can try to update the taxonomy database using\n")
         sys.stderr.write("#tango download taxonomy --force\n")
-    return lineage_df
+    return lineage_df.loc[:,lineage_df.dtypes==int], name_dict
 
 
 def process_queries(args):
     """Receives a query and its results and assigns taxonomy"""
-    res_tax = {}
     res_taxids = {}
     min_rank_threshold = 0
     query, res, rank_thresholds, top, reportranks, assignranks, mode, vote_threshold, lineage_df, taxidmap = args
@@ -580,27 +603,23 @@ def process_queries(args):
     res_df = pd.merge(res_df, lineage_df, left_on="staxids", right_index=True, how="left")
     # Remove potential nan rows created if the blast results have taxids that are missing from lineage_df
     res_df = res_df.loc[res_df[reportranks[0]] == res_df[reportranks[0]]]
-    # Initialize dictionaries
-    res_tax[query] = dict.fromkeys(reportranks, "Unclassified")
+    # Initialize dictionary
     res_taxids[query] = dict.fromkeys(reportranks, -1)
     # Handle queries that return pandas Series
     res_df = res_df.loc[res_df.bitscore >= thresholds[query]]
     res_df = series2df(res_df)
-    lca = {}
     lca_taxids = {}
     # Parse with rank thresholds or by just filtering by bitscore
     if "rank" in mode:
         if len(res_df.loc[res_df.pident >= min_rank_threshold]) > 0:
-            lca, lca_taxids = parse_with_rank_thresholds(res_df, assignranks, reportranks,
+            lca_taxids = parse_with_rank_thresholds(res_df, assignranks, reportranks,
                                                          rank_thresholds, mode, vote_threshold)
     else:
-        lca, lca_taxids = get_lca(res_df, assignranks, reportranks)
-    # Update results with lca and lca_taxids
-    res_tax[query].update(lca)
+        lca_taxids = get_lca(res_df, assignranks, reportranks)
+    # Update results with lca_taxids
     res_taxids[query].update(lca_taxids)
-    res_tax[query] = propagate_taxa(res_tax[query], reportranks)
     res_taxids[query] = propagate_taxids(res_taxids[query], reportranks)
-    return res_tax[query], res_taxids[query], query
+    return res_taxids[query], query
 
 
 def write_blobout(f, res_taxids, queries, ranks):
@@ -761,7 +780,8 @@ def parse_hits(diamond_results, outfile, taxidout=False, blobout=False, top=10, 
     else:
         taxids = ids
     # Create lineage dataframe
-    lineage_df = make_lineage_df(taxids, taxdir, sqlitedb, reportranks, cpus)
+    lineage_df, name_dict = make_lineage_df(taxids, taxdir, sqlitedb, reportranks, cpus)
+    sys.stderr.write("Size of lineage_dict: {}\n".format(sys.getsizeof(lineage_df)))
     # Set up multiprocessing pool
     items = stage_queries(res, lineage_df, input_format, rank_thresholds, top, mode, vote_threshold, assignranks,
                           reportranks, taxidmap)
@@ -769,31 +789,30 @@ def parse_hits(diamond_results, outfile, taxidout=False, blobout=False, top=10, 
     with Pool(processes=cpus) as pool:
         assign_res = list(tqdm.tqdm(pool.imap(process_queries, items, chunksize=chunksize), desc="Parsing queries",
                                     total=total_queries, unit=" queries", ncols=100))
-    # res_tax is the taxonomy table with taxon names
+    # res_tax is the taxonomy table with taxids
     res_tax = [item[0] for item in assign_res]
-    # res_taxids is the taxonomy table with taxon ids
-    res_taxids = [item[1] for item in assign_res]
     # queries is a list of queries
-    queries = [item[2] for item in assign_res]
+    queries = [item[1] for item in assign_res]
+    # Create dataframe from taxonomy results
+    res_df = pd.DataFrame(res_tax, index=queries)[reportranks]
+    res_df.index.name = "query"
     # Writes blobtools-compatible output
     if blobout:
         sys.stderr.write("Writing blobtools file to {}\n".format(blobout))
-        write_blobout(blobout, res_taxids, queries, reportranks)
+        write_blobout(blobout, res_df, queries, reportranks)
     # Write table with taxonomy ids instead of taxon names
     if taxidout:
         sys.stderr.write("Writing results with taxids to {}\n".format(taxidout))
-        res_taxid_df = pd.DataFrame(res_taxids, index=queries)[reportranks]
-        res_taxid_df.index.name = "query"
-        res_taxid_df.to_csv(taxidout, sep="\t")
-    # Create dataframe from taxonomy table
-    res_df = pd.DataFrame(res_tax, index=queries)[reportranks]
-    res_df.index.name = "query"
+        res_df.to_csv(taxidout, sep="\t")
     # Write main output
+    sys.stderr.write("Translating taxids to names\n")
+    res_names_df = pd.concat([res_df[rank].astype("category").cat.rename_categories(name_dict) for rank in reportranks],
+                             axis=1)
     sys.stderr.write("Writing main output to {}\n".format(outfile))
-    res_df.to_csv(outfile, sep="\t")
+    res_names_df.to_csv(outfile, sep="\t")
     # Summary stats
-    unc = [len(res_df.loc[res_df.loc[:, rank].str.contains("Unclassified")]) for rank in reportranks]
-    tot = [len(res_df)] * len(reportranks)
+    unc = [len(res_names_df.loc[res_names_df.loc[:, rank].str.contains("Unclassified")]) for rank in reportranks]
+    tot = [len(res_names_df)] * len(reportranks)
     cl = 100 - np.divide(unc, tot) * 100
     cl = ["{}%".format(str(np.round(x, 1))) for x in cl]
     summary = pd.DataFrame(cl, index=reportranks)
