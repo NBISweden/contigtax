@@ -114,10 +114,18 @@ def propagate_lower(x, taxid, ranks):
     """
     Shift known ranks down through the taxonomic hierarchy.
 
-    :param x: DataFrame of one taxid and its taxonomic ranks
-    :param taxid: Taxid being evaluated
-    :param ranks: Ranks used for assigning
-    :return: pandas DataFrame updated with missing ranks
+    Parameters
+    ----------
+    x: pandas.DataFrame
+        DataFrame of one taxid and its taxonomic ranks
+    taxid:  int
+        Taxid being evaluated
+    ranks: list
+        Ranks used for assigning
+
+    Returns
+    -------
+        pandas.DataFrame updated with missing ranks
 
     Some proteins in the database may map to a taxonomic rank above the lowest taxonomic rank that we are trying to
     assign. For instance, if we use the ranks 'superkingdom phylum genus species' and a protein maps to a taxid at
@@ -538,6 +546,8 @@ def make_lineage_df(taxids, taxdir, dbname, ranks, cpus=1):
     lineage_df = pd.concat(res, sort=False)
     lineage_df.rename(index=rename, inplace=True)
     lineage_df.rename(index=lambda x: int(x), inplace=True)
+    for rank in ranks:
+        lineage_df[rank] = pd.to_numeric(lineage_df[rank])
     if len(missing_taxids) > 0:
         sys.stderr.write("#WARNING: Missing taxids found:\n")
         sys.stderr.write("#{}\n".format(",".join([str(x) for x in missing_taxids])))

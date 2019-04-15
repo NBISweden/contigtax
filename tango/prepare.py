@@ -480,7 +480,7 @@ def format_fasta(fastafile, reformatted, tmpdir=False, force=False, taxidmap=Fal
             fasta_string = ">{}\n{}\n".format(newid, str(record.seq))  # Write record with new id
             fhreformat.write(fasta_string.encode())
     sys.stderr.write("{}/{} records parsed\n".format(i, i))
-    # Close idmap file handle if
+    # Close idmap file handle if open
     if fhidmap:
         fhidmap.close()
     # If uniref database the mapfile has been created during reformatting
