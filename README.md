@@ -1,4 +1,5 @@
 # TANGO
+[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat-square)](http://bioconda.github.io/recipes/tango/README.html) ![dependencies](https://img.shields.io/conda/pn/bioconda/tango.svg) ![GNU General Public License](https://img.shields.io/aur/license/tango.svg) ![update history](https://img.shields.io/github/last-commit/johnne/tango/master.svg)
 
 TANGO (**T**axonomic cl**A**ssificatio**N** of meta**G**enomic c**O**ntigs)
 is a tool that assigns taxonomy to metagenomic contigs by querying contig

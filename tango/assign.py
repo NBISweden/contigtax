@@ -20,47 +20,26 @@ import gzip as gz
 from tango.prepare import init_sqlite_taxdb
 
 
-def calculate_norm_id(df, normlen=False):
-    """
-    Calculates normalized identity for diamond results
-    :param df: pandas DataFrame of diamond results
-    :param normlen: boolean specifying if percent id of a hit is to be normalized by length
-    :return: pandas DataFrame with an extra column 'normid'
-
-    If there is a column specifying length of either the query or the subject and if the user has
-    explicitly set 'normlen' to True then the percent identity is normalized by the fraction of aligned positions:
-
-                                     alignment length
-            normid = percent id x -----------------------
-                                  subject or query length
-
-    If normlen = False then normid = percent id / 100
-    """
-    # Normalize identity to aligned fraction if subject length is available
-    if "slen" in df.columns and normlen:
-        # Create a new column that is: <alignment length>/<subject length> * <alignment identity>/100
-        df = df.assign(lfrac=df.length.div(df.slen))
-        # For hits where alignment length is greater than subject length, take the inverse
-        df.loc[df.lfrac > 1, "lfrac"] = 1 / df.loc[df.lfrac > 1, "lfrac"]
-        df = df.assign(normid=df.lfrac.multiply(df.pident.div(100)))
-        df.drop("lfrac", axis=1, inplace=True)
-    # If not, just return identity
-    else:
-        df = df.assign(normid=df.pident.div(100))
-    return df
-
-
 def get_thresholds(df, top=10):
     """
     Here bit-score thresholds are calculated per query an returned in a dictionary.
 
-    :param df: pandas DataFrame of diamond results
-    :param top: Percentage range of top bitscore
-    :return: dictionary with queries as keys and bitscore thresholds as values
-
     The pandas DataFrame is first sorted by bitscore (high to low), then grouped by query, then for the first entry
     per query the top% of the best hit is calculated and converted to dictionary.
+
+    Parameters
+    ----------
+    df: pandas.DataFrame
+        DataFrame of diamond results
+    top: int
+        Percentage range of top bitscore
+
+    Returns
+    -------
+    thresholds: dict
+        Dictionary with queries as keys and bitscore thresholds as values
     """
+
     thresholds = (df.sort_values("bitscore", ascending=False).groupby(level=0).first().bitscore * (
         (100 - top)) / 100).to_dict()
     return thresholds
@@ -70,12 +49,21 @@ def get_rank_thresholds(ranks, thresholds):
     """
     Constructs dictionary of rank-specific thresholds
 
-    :param ranks: Taxonomic ranks to assign
-    :param thresholds: Thresholds for taxonomic ranks
-    :return: Dictionary of thresholds
+    Parameters
+    ----------
+    ranks: list
+        Taxonomic ranks to assign
+    thresholds: list
+        Thresholds for taxonomic ranks
+
+    Returns
+    -------
+        Dictionary of thresholds
     """
-    if len(thresholds) != len(ranks):
-        sys.exit("ERROR: Number of taxonomic ranks and number of thresholds differ\n")
+
+    t_len, r_len = len(thresholds), len(ranks)
+    if t_len != r_len:
+        sys.exit("ERROR: Number of taxonomic ranks ({}) and number of thresholds ({}) differ\n".format(r_len, t_len))
     return dict(zip(ranks, thresholds))
 
 
@@ -83,11 +71,20 @@ def add_names(x, taxid, ncbi_taxa):
     """
     This function translates taxonomy ids to names. It operates per-row in the lineage dataframe.
 
-    :param x: DataFrame of one taxid and its taxonomic ranks
-    :param taxid: Taxid being evaluated
-    :param ncbi_taxa: The ete3 sqlite database connection
-    :return: The original DataFrame merged with the taxa names
+    Parameters
+    ----------
+    x: pandas.DataFrame
+        DataFrame of one taxid and its taxonomic ranks
+    taxid: int
+        Taxid being evaluated
+    ncbi_taxa: ete3.ncbi_taxonomy.ncbiquery.NCBITaxa
+        The ete3 sqlite database connection
+
+    Returns
+    -------
+        The original DataFrame merged with the taxa names
     """
+
     # Get a names dictionary for all taxids in the row
     names = ncbi_taxa.get_taxid_translator(list(x.loc[taxid].values) + [taxid])
     n = {}
@@ -117,10 +114,18 @@ def propagate_lower(x, taxid, ranks):
     """
     Shift known ranks down through the taxonomic hierarchy.
 
-    :param x: DataFrame of one taxid and its taxonomic ranks
-    :param taxid: Taxid being evaluated
-    :param ranks: Ranks used for assigning
-    :return: pandas DataFrame updated with missing ranks
+    Parameters
+    ----------
+    x: pandas.DataFrame
+        DataFrame of one taxid and its taxonomic ranks
+    taxid:  int
+        Taxid being evaluated
+    ranks: list
+        Ranks used for assigning
+
+    Returns
+    -------
+        pandas.DataFrame updated with missing ranks
 
     Some proteins in the database may map to a taxonomic rank above the lowest taxonomic rank that we are trying to
     assign. For instance, if we use the ranks 'superkingdom phylum genus species' and a protein maps to a taxid at
@@ -131,6 +136,7 @@ def propagate_lower(x, taxid, ranks):
     In the Uniref90 database the entry 'E1GVX1' maps to taxonomy id 838 (rank: genus, name: Prevotella).
     When creating the lineage for taxid 838 we add '-838' to rank species.
     """
+
     rev_ranks = [ranks[x] for x in list(range(len(ranks) - 1, -1, -1))]
     missing = {}
     known = taxid
@@ -146,15 +152,24 @@ def get_lca(r, assignranks, reportranks):
     """
     Assign lowest common ancestor from a set of taxids.
 
-    :param r: Results for a single query, extracted from the main diamond results file
-    :param assignranks: Taxonomic ranks to assign taxonomy for
-    :param reportranks: Taxonomic ranks to report taxonomy for
-    :return: a tuple of dictionaries with ranks as keys and taxa names/ids as values
+    Parameters
+    ----------
+    r: pandas.DataFrame
+        Results for a single query, extracted from the main diamond results file
+    assignranks: list
+        Taxonomic ranks to assign taxonomy for
+    reportranks: list
+        Taxonomic ranks to report taxonomy for
+
+    Returns
+    -------
+        a tuple of dictionaries with ranks as keys and taxa names/ids as values
 
     This function takes a query-slice of the diamond results after filtering by score (and rank-threshold if tango mode
     is 'rank_lca' or 'rank_vote'). It then iterates through each rank in reverse order checks how many unique taxids are
     found at that rank. If there's only one taxid
     """
+
     query = r.index.unique()[0]
     # Reverse ranks for iterating
     rev_ranks = [assignranks[x] for x in list(range(len(assignranks) - 1, -1, -1))]
@@ -177,7 +192,41 @@ def get_lca(r, assignranks, reportranks):
 
 
 def parse_with_rank_thresholds(r, assignranks, reportranks, rank_thresholds, mode, vote_threshold):
-    """Performs parsing by iterating through the ranks in reverse, attempting to assign a taxonomy to lowest rank"""
+    """Assigns taxonomy using rank_specific thresholds
+
+    The ranks used to assign taxonomy are iterated in reverse (e.g. species, genus, phylum),
+    at each rank results are filtered by the corresponding rank threshold,
+    if no hits remain after filtering the next rank is evaluated,
+
+    Then, if mode=='rank_lca', for remaining hits, a lowest common ancestor is calculated from all remaining taxids.
+
+    However, if mode=='rank_vote', taxids are counted among the remaining hits and all results matching taxids
+    that occur more than vote_threshold are used to determine the lowest common ancestor.
+
+    If a taxonomy can be assigned at a rank, it is returned directly. If no taxonomy can be assigned at any of the
+    ranks, empty results are returned.
+
+    Parameters
+    ----------
+    r: pandas.DataFrame
+        Dataframe slice for a query
+    assignranks: list
+        Taxonomic ranks used to assign taxonomy
+    reportranks: list
+        Taxonomic ranks at which taxonomy is reported
+    rank_thresholds: dict
+        Dictionary of rank_specific thresholds
+    mode: str
+        'rank_lca' or 'rank_vote'
+    vote_threshold: float
+        Cutoff used to filter out common taxids
+
+    Returns
+    -------
+    tuple
+        Dictionaries with taxonomy names and taxonomy ids at each rank
+    """
+
     # Start from lowest rank
     rev_ranks = [assignranks[x] for x in list(range(len(assignranks) - 1, -1, -1))]
     for rank in rev_ranks:
@@ -187,7 +236,7 @@ def parse_with_rank_thresholds(r, assignranks, reportranks, rank_thresholds, mod
         threshold = rank_thresholds[rank]
         # Filter results by rank threshold
         try:
-            _r = r.loc[r.normid >= threshold]
+            _r = r.loc[r.pident >= threshold]
         except KeyError:
             continue
         if len(_r) == 0:
@@ -211,16 +260,24 @@ def get_rank_vote(r, rank, vote_threshold=0.5):
     """
     Filter results based on fraction of taxa
 
-    :param r: Results for a single query, after filtering with bitscore and rank-specific thresholds
-    :param rank: Current rank being investigated
-    :param vote_threshold: Required fraction of hits from a single taxa in order to keep taxa
-    :return: Filtered dataframe only containing taxa that meet vote_threshold
+    Parameters
+    ----------
+    r: pandas.DataFrame
+        Results for a single query, after filtering with bitscore and rank-specific thresholds
+    rank: str
+        Current rank being investigated
+    vote_threshold: float
+        Required fraction of hits from a single taxa in order to keep taxa
+
+    Returns
+    -------
+        Filtered dataframe only containing taxa that meet vote_threshold
 
     Here taxa are counted among all hits remaining for a query after filtering using bitscore and rank-specific
     thresholds. Taxa are counted at a certain rank and counts are normalized. Hits belonging to taxa above
     vote_threshold are kept while others are filtered out.
     """
-    """Counts unique taxid from filtered dataframe and sums to current rank"""
+
     # Create dataframe for unique taxids filtered at this rank threshold
     taxid_counts = pd.DataFrame(dict.fromkeys(r.staxids.unique(), 1), index=["count"]).T
     # Add taxid for rank being investigated
@@ -240,10 +297,19 @@ def propagate_taxa(res, ranks):
     """
     Transfer taxonomy names to unassigned ranks based on best known taxonomy
 
-    :param res: Dictionary of ranks and taxonomy names
-    :param ranks: Ranks to assign taxonomy to
-    :return: Dictionary with updated rank names
+    Parameters
+    ----------
+    res: dict
+        Dictionary of ranks and taxonomy names
+    ranks: list
+        Ranks to assign taxonomy to
+
+    Returns
+    -------
+    res: dict
+        Dictionary with updated rank names
     """
+
     known = ""
     for rank in ranks:
         if res[rank] == "Unclassified":
@@ -262,10 +328,19 @@ def propagate_taxids(res, ranks):
     """
     Transfer taxonomy ids to unassigned ranks based on best known taxonomy
 
-    :param res: Dictionary of ranks and taxonomy ids
-    :param ranks: Ranks to assign taxonomy to
-    :return: Dictionary with updated taxonomy ids
+    Parameters
+    ----------
+    res: dict
+        Dictionary of ranks and taxonomy ids
+    ranks: list
+        Ranks to assign taxonomy to
+
+    Returns
+    -------
+    res: dict
+        Dictionary with updated taxonomy ids
     """
+
     known = -1
     for rank in ranks:
         if res[rank] == -1 and known > 0:
@@ -282,51 +357,22 @@ def series2df(df):
     return df
 
 
-def read_lengthmap(args, res):
-    """
-    Reads protein id to protein length map file
-
-    :param args: Input arguments
-    :param res: Diamond results dictionary
-    :return: Dictionary of protein id to protein length
-    """
-    open_function = open
-    # If lengths are for queries we extract all query ids from the results
-    if args.querylenmap:
-        mapfile = args.querylenmap
-        ids = res.keys()
-    # If lengths are for subjects we extract all subject ids from the results
-    elif args.subjectlenmap:
-        mapfile = args.subjectlenmap
-        ids = list(set(res[q][i][0] for q in res.keys() for i in range(0, len(res[q]))))
-    if ".gz" in mapfile:
-        open_function = gz.open
-    # Set lengthmap dictionary here
-    lengthmap = dict.fromkeys(ids, 0)
-    with open_function(mapfile, 'rt') as fhin:
-        for line in tqdm.tqdm(fhin, desc="Reading lengths from {}".format(mapfile), ncols=100, unit=" lines"):
-            protid, length = (line.rstrip()).rsplit()
-            # Attempt to add length to dictionary for protein and subtract the existing length in case the same
-            # id is listed more than once in the file
-            # If we get a KeyError this is not the id we are looking for
-            # If we get a ValueError then it's not a valid length
-            try:
-                lengthmap[protid] += int(length) - lengthmap[protid]
-            except KeyError:
-                continue
-            except ValueError:
-                continue
-    return pd.DataFrame(lengthmap, index=["slen"]).T
-
-
 def read_taxidmap(f, ids):
     """
     Reads the protein to taxid map file and stores mappings
 
-    :param f: Input file
-    :param ids: Unique protein ids to store taxids for
-    :return: Dictionary of protein ids to taxid and all unique taxids
+    Parameters
+    ----------
+    f: str
+        Input file with protein_id->taxid map
+    ids: list
+        Protein ids to store taxids for
+
+    Returns
+    -------
+        Dictionary of protein ids to taxid and all unique taxids
     """
+
     taxidmap = dict.fromkeys(ids, -1)
     open_function = open
     if ".gz" in f:
@@ -352,53 +398,79 @@ def read_taxidmap(f, ids):
     return pd.DataFrame(taxidmap, index=["staxids"]).T, list(set(taxidmap.values()))
 
 
-def read_df(args):
+def read_df(infile, top=10, e=0.001, input_format="tango", taxidmap=None):
     """
-    Reads the blast output into a format that can be processed with the multiprocessing module
+    Reads the blast results from file and returns a dictionary with query->results.
 
-    If the diamond search has handled internally then the output looks like this
-    query1     subject1   93.6    47      3       0       146     6       79      125     8.5e-16 91.3    314295  128
-    query1     subject2  100.0   44      0       0       137     6       484     527     2.5e-15 89.7    9347    530
-    query2     subject3      53.5    241     84      2       645     7       15      255     1.3e-53 216.9   864142  279
+    Note that the input is assumed to be sorted by bitscore for each query. The first entry for a query is used to set
+    the score threshold for storing hits for that query. So if a query has a bitscore of 100 and --top 10 is specified
+    then we only store subsequent hits that have a bitscore of at least (100-0.1*100) = 90.
 
-    where the last two columns are taxid and subject length, respectively.
+    Tango-formatted output contains two additional compared to the standard blast format 6:
+    query1     subject1   93.6    47      3       0       146     6       79      125     8.5e-16 91.3    314295
+    query1     subject2  100.0   44      0       0       137     6       484     527     2.5e-15 89.7    9347
+    query2     subject3      53.5    241     84      2       645     7       15      255     1.3e-53 216.9   864142
+
+    where the last column is the taxid of the subject.
 
     Otherwise the output may have the typical blast format 6 output.
+
+    Parameters
+    ----------
+    infile: str
+        Arguments from argument parser
+    top: int
+        Keep results within top% of best bitscore
+    e: float
+        Maximum allowed e-value to keep a hit.
+    input_format: str
+        Blast format. 'tango' if taxid for each subject is present in blast results, otherwise 'blast'
+    taxidmap: str
+        File mapping each subject id to a taxid
+
+    Returns
+    -------
+    tuple
+        The function returns a tuple with dictionary of query->results and
+        unique taxonomy ids (if tango format) or unique subject ids
     """
+
     open_function = open
-    if ".gz" in args.diamond_results:
+    if ".gz" in infile:
         open_function = gz.open
     r = {}
     taxids = []
     queries = {}
-    with open_function(args.diamond_results, 'rt') as fhin:
-        for line in tqdm.tqdm(fhin, desc="Reading {}".format(args.diamond_results), ncols=100, unit=" lines"):
-            line = line.rstrip()
-            items = line.rsplit()
-            # Calculate score threshold the first time a query is observed
-            query = items[0]
-            score = float(items[11])
+    with open_function(infile, 'rt') as fhin:
+        for line in tqdm.tqdm(fhin, desc="Reading {}".format(infile), ncols=100, unit=" lines"):
+            items = line.rstrip().rsplit()
+            query, subject, pident, evalue, score = items[0], items[1], float(items[2]), \
+                                                    float(items[10]), float(items[11])
             try:
-                min_score = queries[query]
+                min_score = queries[query]['min_score']
             except KeyError:
-                min_score = score * ((100 - args.top) / 100)
-                queries[query] = min_score
-            if score < min_score:
+                min_score = score * ((100 - top) / 100)
+                queries[query] = {'min_score': min_score}
+            if score < min_score or evalue > e:
                 continue
-            if args.format == "tango" and len(items) == 14:
-                taxids.append(items[-2])
-            elif args.format == "blast" and len(items) == 12:
-                if not args.taxidmap:
+            if input_format == "tango" and len(items) > 12:
+                taxid = items[12]
+                taxids.append(taxid)
+                # TODO: Is there a way to skip storing the same taxid from a worse hit for the same query
+            elif input_format == "blast" and len(items) == 12:
+                taxid = ""
+                if not taxidmap:
                     sys.exit(
                         "ERROR: Standard blast input detected with no protein -> taxid file specified (--taxidmap).")
             else:
                 continue
+            # Add results for query to dictionary
             try:
-                r[items[0]] += [[items[1]] + [float(x) for x in items[2:]]]
+                r[query] += [[subject, pident, evalue, score, int(taxid)]]
             except KeyError:
-                r[items[0]] = [[items[1]] + [float(x) for x in items[2:]]]
+                r[query] = [[subject, pident, evalue, score, int(taxid)]]
     # If this is blast format then we return all subject ids found
-    if args.format == "blast":
+    if input_format == "blast":
         ids = list(set([r[key][i][0] for key in list(r.keys()) for i in range(0, len(r[key]))]))
         return r, ids
     # If this is tango format then return all taxids found
@@ -406,97 +478,147 @@ def read_df(args):
 
 
 def process_lineages(items):
-    """Looks up lineage information from taxids"""
+    """
+    Looks up lineage information from taxids.
+
+    The lineage object is a list of taxonomic ids corresponding to the full lineage of a single taxid.
+    """
     taxid, ranks, taxdir, dbname, lineage = items
     # Read the taxonomy db
     ncbi_taxa = init_sqlite_taxdb(taxdir, dbname)
+    # Get ranks for each taxid in the lineage
     lineage_ranks = ncbi_taxa.get_rank(lineage)
     x = pd.DataFrame(lineage_ranks, index=["rank"]).T
     x = x.loc[x["rank"].isin(ranks)].reset_index().T
     x.columns = x.loc["rank"]
     x.drop("rank", inplace=True)
     x.index = [taxid]
+    # Add taxids for lower ranks in the hierarchy
     x = propagate_lower(x, taxid, ranks)
+    # Add names for taxids
     x = add_names(x, taxid, ncbi_taxa)
     return x
 
 
-def make_lineage_df(taxids, taxdir, dbname, ranks, threads=1):
-    """Adds lineage information to diamond results"""
+def make_lineage_df(taxids, taxdir, dbname, ranks, cpus=1):
+    """
+    Creates a lineage dataframe with full taxonomic information for a list of taxids.
+
+    Example:
+    taxid   species phylum  genus   genus.name      phylum.name     species.name
+    859655  305     1224    48736   Ralstonia       Proteobacteria  Ralstonia solanacearum
+    387344  1580    1239    1578    Lactobacillus   Firmicutes      Lactobacillus brevis
+    358681  1393    1239    55080   Brevibacillus   Firmicutes      Brevibacillus brevis
+
+    Parameters
+    ----------
+    taxids: list
+        List of taxonomic ids to obtain information for
+    taxdir: str
+        Path to directory holding taxonomic info
+    dbname: str
+        Name of ete3 sqlite database within taxdir
+    ranks: list
+        Ranks to store information for
+    cpus: int
+        Number of cpus to use
+
+    Returns
+    -------
+    lineage_df: pandas.DataFrame
+        Data Frame with full taxonomic info
+    """
     # Read the taxonomy db
     ncbi_taxa = init_sqlite_taxdb(taxdir, dbname)
     lineages = ncbi_taxa.get_lineage_translator(taxids)
+    # Store potential missing taxids and warn user
+    missing_taxids = set([int(x) for x in taxids]).difference(lineages.keys())
     # Get possible translations for taxids that have been changed
     _, translate_dict = ncbi_taxa._translate_merged(list(set(taxids).difference(lineages.keys())))
     rename = {y: x for x, y in translate_dict.items()}
     # Update lineages with missing taxids
     lineages.update(ncbi_taxa.get_lineage_translator(translate_dict.values()))
     items = [[taxid, ranks, taxdir, dbname, lineages[taxid]] for taxid in list(lineages.keys())]
-    with Pool(processes=threads) as pool:
+    with Pool(processes=cpus) as pool:
         res = list(
-            tqdm.tqdm(pool.imap(process_lineages, items), desc="Creating lineages", total=len(items), unit=" taxids",
-                      ncols=100))
+            tqdm.tqdm(pool.imap(process_lineages, items), desc="Making lineages", total=len(items),
+                      unit=" taxids", ncols=100))
     lineage_df = pd.concat(res, sort=False)
     lineage_df.rename(index=rename, inplace=True)
+    lineage_df.rename(index=lambda x: int(x), inplace=True)
+    for rank in ranks:
+        lineage_df[rank] = pd.to_numeric(lineage_df[rank])
+    if len(missing_taxids) > 0:
+        sys.stderr.write("#WARNING: Missing taxids found:\n")
+        sys.stderr.write("#{}\n".format(",".join([str(x) for x in missing_taxids])))
+        sys.stderr.write("#To fix this, you can try to update the taxonomy database using\n")
+        sys.stderr.write("#tango download taxonomy --force\n")
     return lineage_df
 
 
-def process_queries(items):
+def process_queries(args):
     """Receives a query and its results and assigns taxonomy"""
     res_tax = {}
     res_taxids = {}
     min_rank_threshold = 0
-    query, lineage_df, res, rank_thresholds, args, taxidmap, lengthmap = items
-    if len(rank_thresholds) > 0:
+    query, res, rank_thresholds, top, reportranks, assignranks, mode, vote_threshold, lineage_df, taxidmap = args
+    if len(rank_thresholds) > 0 and "rank" in mode:
         min_rank_threshold = min([x for x in rank_thresholds.values()])
-    columns = ['sseqid', 'pident', 'length', 'mismatch', 'gapopen', 'qstart', 'qend',
-               'sstart', 'send', 'evalue', 'bitscore']
-    if len(res[0]) == 13:
-        columns += ['staxids', 'slen']
+    columns = ['sseqid', 'pident', 'evalue', 'bitscore']
+    if len(res[0]) == 5:
+        columns += ['staxids']
     # Create pandas dataframe for slice
     res_df = pd.DataFrame(res, columns=columns, index=[query] * len(res))
     # Add taxidmap if not present in results
     if "staxids" not in res_df.columns:
         res_df = pd.merge(res_df, taxidmap, left_on="sseqid", right_index=True, how="left")
-    # Add protein lengths if present
-    if "slen" not in res_df.columns and len(lengthmap) > 0:
-        if args.querylenmap:
-            res_df = pd.merge(res_df, pd.DataFrame(lengthmap).T, left_index=True, right_index=True, how="left")
-        elif args.subjectlenmap:
-            res_df = pd.merge(res_df, lengthmap, left_on="sseqid", right_index=True, how="left")
-    # Calculate normalized %id for slice
-    res_df = calculate_norm_id(res_df, normlen=args.normlen)
     # Calculate bit score threshold for slice
-    thresholds = get_thresholds(res_df, top=args.top)
+    thresholds = get_thresholds(res_df, top=top)
     # Set index
     res_df.index.name = "qseqid"
     # Merge with lineage df
     res_df = pd.merge(res_df, lineage_df, left_on="staxids", right_index=True, how="left")
+    # Remove potential nan rows created if the blast results have taxids that are missing from lineage_df
+    res_df = res_df.loc[res_df[reportranks[0]] == res_df[reportranks[0]]]
     # Initialize dictionaries
-    res_tax[query] = dict.fromkeys(args.reportranks, "Unclassified")
-    res_taxids[query] = dict.fromkeys(args.reportranks, -1)
+    res_tax[query] = dict.fromkeys(reportranks, "Unclassified")
+    res_taxids[query] = dict.fromkeys(reportranks, -1)
     # Handle queries that return pandas Series
     res_df = res_df.loc[res_df.bitscore >= thresholds[query]]
     res_df = series2df(res_df)
     lca = {}
     lca_taxids = {}
     # Parse with rank thresholds or by just filtering by bitscore
-    if "rank" in args.mode:
-        if len(res_df.loc[res_df.normid >= min_rank_threshold]) > 0:
-            lca, lca_taxids = parse_with_rank_thresholds(res_df, args.assignranks, args.reportranks,
-                                                         rank_thresholds, args.mode, args.vote_threshold)
+    if "rank" in mode:
+        if len(res_df.loc[res_df.pident >= min_rank_threshold]) > 0:
+            lca, lca_taxids = parse_with_rank_thresholds(res_df, assignranks, reportranks,
+                                                         rank_thresholds, mode, vote_threshold)
     else:
-        lca, lca_taxids = get_lca(res_df, args.assignranks, args.reportranks)
+        lca, lca_taxids = get_lca(res_df, assignranks, reportranks)
     # Update results with lca and lca_taxids
     res_tax[query].update(lca)
     res_taxids[query].update(lca_taxids)
-    res_tax[query] = propagate_taxa(res_tax[query], args.reportranks)
-    res_taxids[query] = propagate_taxids(res_taxids[query], args.reportranks)
+    res_tax[query] = propagate_taxa(res_tax[query], reportranks)
+    res_taxids[query] = propagate_taxids(res_taxids[query], reportranks)
     return res_tax[query], res_taxids[query], query
 
 
 def write_blobout(f, res_taxids, queries, ranks):
-    """Writes blob-format output for use with blobtools"""
+    """
+    Writes output in a format for use with blobtools
+
+    Parameters
+    ----------
+    f: str
+        Outputfile
+    res_taxids: list
+        List of results for queries
+    queries: list
+        List of queries
+    ranks: list
+        Ranks to write results for
+    """
+
     rev_ranks = [ranks[x] for x in list(range(len(ranks) - 1, -1, -1))]
     with open(f, 'w') as fhout:
         for i, query in enumerate(queries):
@@ -505,92 +627,176 @@ def write_blobout(f, res_taxids, queries, ranks):
                 if rank in d.keys():
                     taxid = d[rank]
                     if taxid != -1:
-                        fhout.write("{query}\t{taxid}\t1\tref\n".format(query=query, taxid=taxid))
+                        fhout.write("{query}\t{taxid}\t1\tref\n".format(query=query, taxid=abs(taxid)))
                         break
 
 
-def parse_hits(args):
+def stage_queries(res, lineage_df, input_format="tango", rank_thresholds=[45, 60, 85], top=10, mode="rank_lca",
+                  vote_threshold=0.5, assignranks=["phylum", "genus", "species"],
+                  reportranks=["superkingdom", "phylum", "class", "order", "family", "genus", "species"],
+                  taxidmap=None):
     """
-    Main function to handle diamond result files.
 
-    Results are first read into a dictionary with queries as keys and values being a nested list with each item being
-    the
+    Parameters
+    ----------
+    res: dict
+        Dictionary with queries as keys and a list of hits as values
+    lineage_df: pandas.DataFrame
+        Data frame of taxids and taxonomic information
+    input_format: str
+        'tango' or 'blast'
+    rank_thresholds: list
+        List of thresholds for ranks
+    top: int
+        Only evaluate results within <top> percent bitscore of best scoring hit
+    mode: str
+        'rank_lca' or 'rank_vote' for rank thresholds usage or 'score' to just filter by bitscore
+    vote_threshold: float
+        Cutoff used to filter out common taxids
+    assignranks: list
+        Ranks used to assign taxonomy
+    reportranks: list
+        Ranks to report taxonomy for (inferred from assignranks)
+    taxidmap: dict
+        Dictionary with subject ids as keys and taxids as values
 
-    :param args: Input arguments from __main__.py
-    :return: Return code 0 if all goes well
+    Returns
+    -------
+    items: list
+        List of items to send to multiprocessing
     """
-    # Set up rank thresholds
-    if "rank" in args.mode:
-        rank_thresholds = get_rank_thresholds(args.assignranks, args.rank_thresholds)
-    else:
-        rank_thresholds = {}
-    # Read diamond results
-    res, ids = read_df(args)
-    # Read protein -> taxidmap file if specified
-    taxidmap = pd.DataFrame()
-    lengths = pd.DataFrame()
-    if args.format == "blast":
-        taxidmap, taxids = read_taxidmap(args.taxidmap, ids)
-        if args.querylenmap or args.subjectlenmap:
-            lengthmap = read_lengthmap(args, res)
-    else:
-        taxids = ids
-    # Create lineage dataframe
-    lineage_df = make_lineage_df(taxids, args.taxdir, args.sqlitedb, args.reportranks, args.threads)
-    # Set up multiprocessing pool
-    total_queries = len(res)
+
     items = []
-    for q in tqdm.tqdm(res.keys(), total=total_queries, unit=" queries", ncols=100, desc="Staging queries"):
-        # If the diamond output does not have standard tango format (i.e. contains subject length and taxid) we
-        # do some work to add this information.
-        if args.format == "blast":
+    total_queries = len(res)
+    for q in tqdm.tqdm(sorted(res.keys()), total=total_queries, unit=" queries", ncols=100, desc="Staging queries"):
+        # If the diamond output does not have standard tango format we do some work to add this information.
+        item = [q, res[q], rank_thresholds, top, reportranks, assignranks, mode, vote_threshold]
+        if input_format == "blast":
             # Get all subject ids
             s = list(set([res[q][i][0] for i in range(0, len(res[q]))]).intersection(lineage_df.index))
             # Get all taxids for this query
             q_taxids = taxidmap.loc[s, "staxids"].unique()
-            # Get lengths if specified by user
-            if args.querylenmap:
-                lengths = lengthmap.loc[q]
-            elif args.subjectlenmap:
-                lengths = lengthmap.loc[s]
-            items.append([q, lineage_df.loc[q_taxids], res[q], rank_thresholds, args, taxidmap.loc[s], lengths])
-        # If diamond output has both taxonomy id and length then directly create the list of results to
+            item += [lineage_df.loc[q_taxids], taxidmap.loc[s]]
+        # If diamond output has taxonomy id then directly create the list of results to
         # feed into the multiprocessing pool
         else:
             # Get all taxids for query
-            q_taxids = list(set([res[q][i][-2] for i in range(0, len(res[q]))]).intersection(lineage_df.index))
-            items.append([q, lineage_df.loc[q_taxids], res[q], rank_thresholds, args, None, None])
-    with Pool(processes=args.threads) as pool:
-        res = list(tqdm.tqdm(pool.imap(process_queries, items, chunksize=args.chunksize), desc="Parsing queries",
-                             total=total_queries, unit=" queries", ncols=100))
+            q_taxids = list(set([res[q][i][-1] for i in range(0, len(res[q]))]).intersection(lineage_df.index))
+            item += [lineage_df.loc[q_taxids], None]
+        items.append(item)
+    return items
+
+
+def parse_hits(diamond_results, outfile, taxidout=False, blobout=False, top=10, evalue=0.001, input_format="tango",
+               taxidmap=False, mode="rank_lca", vote_threshold=0.5, assignranks=["phylum", "genus", "species"],
+               reportranks=["superkingdom", "phylum", "class", "order", "family", "genus", "species"],
+               rank_thresholds=[45, 60, 85], taxdir="./taxonomy/", sqlitedb="taxonomy.sqlite", chunksize=1, cpus=1):
+    """
+    This is the main function to handle diamond result files and assign taxonomy to queries.
+
+    The function performs the following steps:
+    1. Checks rank-specific thresholds
+    2. Reads the diamond results file
+    3. If required, maps subject ids to taxonomy ids
+    4. Creates a dataframe of all unique taxonomy ids found for subjects and their taxa names for each rank
+    5. Stages queries for multiprocessing
+    6. Processes each query and returns it with assigned taxonomy
+    7. Writes output to file
+
+    Parameters
+    ----------
+    diamond_results: str
+        Diamond results file
+    outfile: str
+        File to write results to
+    taxidout: str
+        If True, write results with taxonomic ids instead of names to file
+    blobout: str
+        If True, write output in blobtools format
+    top: int
+        Evaluate hits within this bitscore percent range of the best scoring hit
+    evalue: float
+        Filter hits with evalue larger than this
+    input_format: str
+        'tango' or 'blast' depending on whether the diamond results has subject taxids in the last column or not
+    taxidmap: str
+        Path to a file mapping subject ids to taxids (needed if input_format != 'tango')
+    mode: str
+        How to assign taxonomy: 'rank_lca' and 'rank_vote' use rank specific thresholds,
+        'score' only filters by bitscore
+    vote_threshold: float
+        When using 'rank_vote' to assign taxonomy, this is the fraction of hits that must have the same taxid to
+        assign a taxonomy at a rank
+    assignranks: list
+        Ranks used to assign taxonomy
+    reportranks: list
+        Ranks to report taxonomy for
+    rank_thresholds: list
+        Percent identity thresholds for assigning taxonomy
+    taxdir: str
+        Path to directory holding taxonomic information files
+    sqlitedb: str
+        Name of ete3 sqlite database within taxdir
+    chunksize: int
+        The size of chunks for the iterable being submitted to the process pool
+    cpus: int
+        The number of worker processes to use
+    args:
+        Input arguments from __main__.py
+
+    Returns
+    -------
+        Return code 0 if function finished without issue
+    """
+
+    # Set up rank thresholds
+    if "rank" in mode:
+        rank_thresholds = get_rank_thresholds(assignranks, rank_thresholds)
+    # Read diamond results
+    res, ids = read_df(diamond_results, top, evalue, input_format, taxidmap)
+    # Read protein -> taxidmap file if specified
+    taxidmap = pd.DataFrame()
+    if input_format == "blast":
+        taxidmap, taxids = read_taxidmap(taxidmap, ids)
+    else:
+        taxids = ids
+    # Create lineage dataframe
+    lineage_df = make_lineage_df(taxids, taxdir, sqlitedb, reportranks, cpus)
+    # Set up multiprocessing pool
+    items = stage_queries(res, lineage_df, input_format, rank_thresholds, top, mode, vote_threshold, assignranks,
+                          reportranks, taxidmap)
+    total_queries = len(res)
+    with Pool(processes=cpus) as pool:
+        assign_res = list(tqdm.tqdm(pool.imap(process_queries, items, chunksize=chunksize), desc="Parsing queries",
+                                    total=total_queries, unit=" queries", ncols=100))
     # res_tax is the taxonomy table with taxon names
-    res_tax = [item[0] for item in res]
+    res_tax = [item[0] for item in assign_res]
     # res_taxids is the taxonomy table with taxon ids
-    res_taxids = [item[1] for item in res]
+    res_taxids = [item[1] for item in assign_res]
     # queries is a list of queries
-    queries = [item[2] for item in res]
+    queries = [item[2] for item in assign_res]
     # Writes blobtools-compatible output
-    if args.blobout:
-        sys.stderr.write("Writing blobtools file to {}\n".format(args.blobout))
-        write_blobout(args.blobout, res_taxids, queries, args.reportranks)
+    if blobout:
+        sys.stderr.write("Writing blobtools file to {}\n".format(blobout))
+        write_blobout(blobout, res_taxids, queries, reportranks)
     # Write table with taxonomy ids instead of taxon names
-    if args.taxidout:
-        sys.stderr.write("Writing results with taxids to {}\n".format(args.taxidout))
-        res_taxid_df = pd.DataFrame(res_taxids, index=queries)[args.reportranks]
+    if taxidout:
+        sys.stderr.write("Writing results with taxids to {}\n".format(taxidout))
+        res_taxid_df = pd.DataFrame(res_taxids, index=queries)[reportranks]
         res_taxid_df.index.name = "query"
-        res_taxid_df.to_csv(args.taxidout, sep="\t")
+        res_taxid_df.to_csv(taxidout, sep="\t")
     # Create dataframe from taxonomy table
-    res_df = pd.DataFrame(res_tax, index=queries)[args.reportranks]
+    res_df = pd.DataFrame(res_tax, index=queries)[reportranks]
     res_df.index.name = "query"
     # Write main output
-    sys.stderr.write("Writing main output to {}\n".format(args.outfile))
-    res_df.to_csv(args.outfile, sep="\t")
+    sys.stderr.write("Writing main output to {}\n".format(outfile))
+    res_df.to_csv(outfile, sep="\t")
     # Summary stats
-    unc = [len(res_df.loc[res_df.loc[:, rank].str.contains("Unclassified")]) for rank in args.reportranks]
-    tot = [len(res_df)] * len(args.reportranks)
+    unc = [len(res_df.loc[res_df.loc[:, rank].str.contains("Unclassified")]) for rank in reportranks]
+    tot = [len(res_df)] * len(reportranks)
     cl = 100 - np.divide(unc, tot) * 100
     cl = ["{}%".format(str(np.round(x, 1))) for x in cl]
-    summary = pd.DataFrame(cl, index=args.reportranks)
+    summary = pd.DataFrame(cl, index=reportranks)
     sys.stderr.write("### SUMMARY ###:\nClassified sequences per rank:\n")
     summary.to_csv(sys.stderr, sep="\t", header=False)
     sys.stderr.write("\n")

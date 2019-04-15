@@ -25,9 +25,10 @@ def read_taxfile(f):
 
 
 def evaluate(f, taxmap, ranks):
-    df = pd.read_table(f, header=0, sep="\t", index_col=0)
+    df = pd.read_csv(f, header=0, sep="\t", index_col=0)
     e = {}
     for rank in ranks:
+        # Iterate all assigned ranks
         for q in df.loc[df.loc[:, rank] == taxmap.loc[df.index, rank]].index:
             if q not in e.keys():
                 e[q] = {rank: 1}
