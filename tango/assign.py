@@ -781,7 +781,6 @@ def parse_hits(diamond_results, outfile, taxidout=False, blobout=False, top=10, 
         taxids = ids
     # Create lineage dataframe
     lineage_df, name_dict = make_lineage_df(taxids, taxdir, sqlitedb, reportranks, cpus)
-    sys.stderr.write("Size of lineage_dict: {}\n".format(sys.getsizeof(lineage_df)))
     # Set up multiprocessing pool
     items = stage_queries(res, lineage_df, input_format, rank_thresholds, top, mode, vote_threshold, assignranks,
                           reportranks, taxidmap)
