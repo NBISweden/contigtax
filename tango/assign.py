@@ -291,40 +291,15 @@ def get_rank_vote(r, rank, vote_threshold=0.5):
     return []
 
 
-def propagate_taxa(res, ranks):
-    """
-    Transfer taxonomy names to unassigned ranks based on best known taxonomy
-
-    Parameters
-    ----------
-    res: dict
-        Dictionary of ranks and taxonomy names
-    ranks: list
-        Ranks to assign taxonomy to
-
-    Returns
-    -------
-    res: dict
-        Dictionary with updated rank names
-    """
-
-    known = ""
-    for rank in ranks:
-        if res[rank] == "Unclassified":
-            if known != "" and "Unclassified" not in known:
-                res[rank] = "{}.{}".format("Unclassified", known)
-            elif known != "" and "Unclassified" in known:
-                res[rank] = known
-            else:
-                continue
-        else:
-            known = res[rank]
-    return res
-
-
 def propagate_taxids(res, ranks):
     """
     Transfer taxonomy ids to unassigned ranks based on best known taxonomy
+    Example:
+
+    {'species': -1, 'family': -171549, 'genus': -171549, 'order': 171549, 'phylum': 976, 'class': 200643, 'superkingdom': 2}
+
+    should become
+    {'species': -171549, 'family': -171549, 'genus': -171549, 'order': 171549, 'phylum': 976, 'class': 200643, 'superkingdom': 2}
 
     Parameters
     ----------
@@ -341,10 +316,13 @@ def propagate_taxids(res, ranks):
 
     known = -1
     for rank in ranks:
-        if res[rank] == -1 and known > 0:
-            res[rank] = -known
-        else:
+        # If not -1 (Unclassified) at rank, store assignment as known
+        if res[rank] != -1:
             known = res[rank]
+            continue
+        # If -1 at rank (Unclassified), add the taxid with the '-' prefix
+        if res[rank] == -1:
+            res[rank] = -abs(known)
     return res
 
 
