@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="tango",
-    version="0.5.4",
+    version="0.5.5",
     author="John Sundh",
     author_email="john.sundh@scilifelab.se",
     description="A package to assign taxonomy to metagenomic contigs",
@@ -16,7 +16,7 @@ setuptools.setup(
     entry_points={'console_scripts': ['tango = tango.__main__:main']},
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: GNU GENERAL PUBLIC LICENSE",
+        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
 )
