@@ -7,6 +7,34 @@ import gzip as gz
 from tango.prepare import init_sqlite_taxdb
 
 
+def translate_taxids_to_names(res_df, reportranks, name_dict):
+    """
+    Takes a pandas dataframe with ranks as columns and contigs as rows and taxids as values and translates taxids
+    to names column by column using a taxid->name dictionary
+
+    Parameters
+    ----------
+    res_df: pandas.DataFrame
+        Results with taxids
+    reportranks: list
+        List of taxonomic ranks to report results for
+    name_dict: dictionary
+        Dictionary mapping taxids -> names
+    Returns
+    -------
+    res: pandas.DataFrame
+        Dataframe with names instead of taxids
+    """
+
+    res = {}
+    for rank in reportranks:
+        res[rank] = [name_dict[taxid] for taxid in res_df.loc[:,rank]]
+    res = pd.DataFrame(res)
+    res.index = res_df.index
+    res = res.loc[:, reportranks]
+    return res
+
+
 def get_thresholds(df, top=10):
     """
     Here bit-score thresholds are calculated per query an returned in a dictionary.
@@ -770,8 +798,7 @@ def parse_hits(diamond_results, outfile, taxidout=False, blobout=False, top=10, 
         res_df.to_csv(taxidout, sep="\t")
     # Write main output
     sys.stderr.write("Translating taxids to names\n")
-    res_names_df = pd.concat([res_df[rank].astype("category").cat.rename_categories(name_dict) for rank in reportranks],
-                             axis=1)
+    res_names_df = translate_taxids_to_names(res_df, reportranks, name_dict)
     sys.stderr.write("Writing main output to {}\n".format(outfile))
     res_names_df.to_csv(outfile, sep="\t")
     # Summary stats
