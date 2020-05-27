@@ -454,6 +454,18 @@ def format_fasta(fastafile, reformatted, tmpdir=False, force=False, taxidmap=Fal
         write_idmap(idmap_string, fhidmap)
         for i, record in enumerate(tqdm.tqdm(parse(fhin, "fasta"), unit=" records", ncols=100, total=N)):
             newid, taxid, format = parse_seqid(record)
+            try:
+                taxid = int(taxid)
+            except ValueError:
+                # Set taxid to 1 (root) if it cannot be converted to int
+                # This is to prevent introducing NA values as taxids to
+                # diamond makedb which will cause it to fail
+                taxid = 1
+            except TypeError:
+                # If taxid is None (e.g. if it could not be inferred from
+                # sequence headers) catch the error here.
+                pass
+
             if len(newid) > maxidlen:
                 newid = "id{j}".format(j=j)
                 idmap[record.id] = newid
