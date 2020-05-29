@@ -167,7 +167,7 @@ def main():
                                       "Default: False")
     download_parser.add_argument("--skip_idmap", action="store_true",
                                  help="Skip download of seqid->taxid mapfile "
-                                      "(only applies to 'nr' database.")
+                                      "(only applies to 'nr' database).")
     # Call download function with arguments
     download_parser.set_defaults(func=download)
     # Format parser
