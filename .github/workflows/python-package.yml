@@ -41,7 +41,7 @@ jobs:
       run: conda install -n base -c bioconda diamond
     - name: Install package
       run: python -m pip install .
-    - name: Prepare
+    - name: Format fasta
       run: |
         gzip -c tests/fixtures/uniref100.fasta > uniref100.fasta.gz
         tango format -m uniref100.map.gz uniref100.fasta.gz uniref100.reformat.fasta.gz
@@ -49,3 +49,7 @@ jobs:
       run: tango download taxonomy
     - name: Build
       run: tango build -d uniref100.dmnd uniref100.reformat.fasta.gz uniref100.map.gz taxonomy/nodes.dmp
+    - name: Search
+      run: tango search -p 4 tests/fixtures/shreds.fasta uniref100.dmnd shreds.tsv.gz
+    - name: Assign
+      run: tango assign --taxidout taxids.tsv -p 4  shreds.tsv.gz taxonomy.tsv
