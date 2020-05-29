@@ -330,18 +330,18 @@ def parse_seqid(record):
     return newid, taxid, db_type
 
 
-def setup_format_dirs(fastafile, reformatted, tmpdir):
+def setup_format_dirs(fasta, reformat, tmpdir):
     """Checks what directories and files to create for formatting"""
-    fastadir = os.path.dirname(fastafile)
-    formatdir = os.path.dirname(reformatted)
-    if not os.path.exists(formatdir) and formatdir != "":
+    fastadir = os.path.dirname(fasta) if os.path.dirname(fasta) else "."
+    formatdir = os.path.dirname(reformat) if os.path.dirname(reformat) else "."
+    if not os.path.exists(formatdir):
         os.makedirs(formatdir)
     if not tmpdir:
         tmpdir = formatdir
     else:
         tmpdir = tmpdir
     tmpdir = os.path.expandvars(tmpdir)
-    if not os.path.exists(tmpdir):
+    if not os.path.exists(tmpdir) and tmpdir != "":
         os.makedirs(tmpdir)
     rn_glob = glob("{}/*.release_note".format(fastadir))
     if len(rn_glob) > 0:
@@ -388,15 +388,18 @@ def write_idmap(s, fhidmap):
     return
 
 
-def format_fasta(fastafile, reformatted, tmpdir=False, force=False, taxidmap=False, forceidmap=False, maxidlen=14):
+def format_fasta(fastafile, reformatted, tmpdir=False, force=False,
+                 taxidmap=False, forceidmap=False, maxidlen=14):
     """Reformats a protein fasta file and outputs taxidmap
 
-    The reformatting part includes stripping the 'UniRefxx' prefix from UniRef sequence ids. Taxonomy Ids are also
-    parsed from (UniRef) fasta headers and written to idmap.gz in the format used by NCBI for
-    the prot.accession2taxid.gz file.
+    The reformatting part includes stripping the 'UniRefxx' prefix from
+    UniRef sequence ids. Taxonomy Ids are also parsed from (UniRef) fasta
+    headers and written to idmap.gz in the format used by NCBI for the
+    prot.accession2taxid.gz file.
 
-    Because diamond makedb requires protein accessions to be at most 14 characters this function forces sequence
-    ids to conform to this length by default.
+    Because diamond makedb requires protein accessions to be at most 14
+    characters this function forces sequence ids to conform to this length by
+    default.
 
     Parameters
     ----------
@@ -409,7 +412,8 @@ def format_fasta(fastafile, reformatted, tmpdir=False, force=False, taxidmap=Fal
     tmpdir: str
         Temporary directory to write reformatted fasta to
     taxidmap: str
-        Path to store sequence->taxid map information. Defaults to 'prot.accession2taxid.gz' in same directory as
+        Path to store sequence->taxid map information. Defaults to
+        'prot.accession2taxid.gz' in same directory as
         reformatted output.
     forceidmap: bool
         Should existing taxidmap be overwritten?
@@ -422,7 +426,8 @@ def format_fasta(fastafile, reformatted, tmpdir=False, force=False, taxidmap=Fal
     """
 
     if os.path.exists(reformatted) and not force:
-        sys.stderr.write("{} already exists. Specify '-f' to force overwrite\n".format(reformatted))
+        sys.stderr.write("{} already exists. Specify '-f' to "
+                         "force overwrite\n".format(reformatted))
         return 0
     formatdir, tmpdir, n = setup_format_dirs(fastafile, reformatted, tmpdir)
     if n < 0:
