@@ -122,6 +122,7 @@ def build_diamond_db(fastafile, taxonmap, taxonnodes, dbfile, cpus=1):
                           -d {dbfile} -p {cpus}'.format(fastafile=fastafile, taxonmap=taxonmap,
                                                            taxonnodes=taxonnodes, dbfile=dbfile,
                                                            cpus=cpus), shell=True)
+    #TODO: check that subprocess completes successfully
     return 0
 
 
@@ -314,11 +315,11 @@ def parse_seqid(record):
     db_type: str
         Text string showing whether sequence is from a UniRef fasta file or not
     """
-
     taxid = None
     if "UniRef" in record.id:
         db_type = "uniref"
         newid = (record.id).split("_")[-1]  # Remove the 'UniRefxx_' string
+        # Try to extract the taxid
         try:
             taxid = [x.split("=")[1] for x in (record.description).split(" ") if "TaxID" in x][0]
         except IndexError:
@@ -454,17 +455,13 @@ def format_fasta(fastafile, reformatted, tmpdir=False, force=False, taxidmap=Fal
         write_idmap(idmap_string, fhidmap)
         for i, record in enumerate(tqdm.tqdm(parse(fhin, "fasta"), unit=" records", ncols=100, total=N)):
             newid, taxid, format = parse_seqid(record)
-            try:
-                taxid = int(taxid)
-            except ValueError:
-                # Set taxid to 1 (root) if it cannot be converted to int
-                # This is to prevent introducing NA values as taxids to
-                # diamond makedb which will cause it to fail
-                taxid = 1
-            except TypeError:
-                # If taxid is None (e.g. if it could not be inferred from
-                # sequence headers) catch the error here.
-                pass
+            if taxid is not None:
+                # Check that the taxid is valid
+                # Skip the entry if it is not
+                try:
+                    taxid = int(taxid)
+                except ValueError:
+                    continue
 
             if len(newid) > maxidlen:
                 newid = "id{j}".format(j=j)
