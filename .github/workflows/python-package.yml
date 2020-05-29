@@ -34,3 +34,27 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Install tango
+      uses: s-weigand/setup-conda@v1
+      run:
+        # Install conda environment
+        conda env update -n base -f environment.yaml
+        # Install tango package
+        python -m pip install .
+    - name: Build uniref100
+      run:
+        # Format databases
+        gzip -c tests/fixtures/uniref100.fasta > uniref100.fasta.gz
+        tango format -m uniref100.map.gz uniref100.fasta.gz uniref100.reformat.fasta.gz
+        gzip -c tests/fixtures/uniref90.fasta > uniref90.fasta.gz
+        tango format -m uniref90.map.gz uniref90.fasta.gz uniref90.reformat.fasta.gz
+        gzip -c tests/fixtures/uniref50.fasta > uniref50.fasta.gz
+        tango format -m uniref50.map.gz uniref50.fasta.gz uniref50.reformat.fasta.gz
+    - name: Download taxonomy
+      run:
+        tango download taxonomy
+    - name: Build database
+      run:
+        tango build -d uniref100.dmnd uniref100.reformat.fasta.gz uniref100.map.gz taxonomy/nodes.dmp
+        tango build -d uniref90.dmnd uniref90.reformat.fasta.gz uniref90.map.gz taxonomy/nodes.dmp
+        tango build -d uniref50.dmnd uniref50.reformat.fasta.gz uniref50.map.gz taxonomy/nodes.dmp
