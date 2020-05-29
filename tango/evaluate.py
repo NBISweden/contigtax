@@ -3,13 +3,12 @@
 import pandas as pd
 from argparse import ArgumentParser
 from tango.assign import make_lineage_df
-from multiprocessing import Pool
-import tqdm
 import sys
 
 
 def read_taxfile(f):
-    return pd.read_table(f, sep="\t", index_col=0, header=None, names=["seqid", "taxid"])
+    return pd.read_table(f, sep="\t", index_col=0, header=None,
+                         names=["seqid", "taxid"])
 
 
 def evaluate(f, taxmap, ranks):
@@ -41,13 +40,16 @@ def main():
     parser.add_argument("--dbname", type=str, default="taxonomy.sqlite",
                         help="Name of sqlite database file")
     parser.add_argument("-r", "--ranks", nargs="+",
-                        default=["superkingdom", "phylum", "class", "order", "family", "genus", "species"])
+                        default=["superkingdom", "phylum", "class", "order",
+                                 "family", "genus", "species"])
     args = parser.parse_args()
     taxmap = read_taxfile(args.taxfile)
-    lineage_df = make_lineage_df(taxmap.taxid.unique(), args.taxdir, args.dbname, args.ranks)
+    lineage_df = make_lineage_df(taxmap.taxid.unique(), args.taxdir,
+                                 args.dbname, args.ranks)
     lineage_df.drop(args.ranks, axis=1, inplace=True)
     lineage_df.rename(columns = lambda x: x.replace(".name",""), inplace=True)
-    taxmap = pd.merge(taxmap, lineage_df, left_on="taxid", right_index=True, how="left")
+    taxmap = pd.merge(taxmap, lineage_df, left_on="taxid", right_index=True,
+                      how="left")
     eval_df = evaluate(args.infile, taxmap, args.ranks)
     eval_df.to_csv(sys.stdout, sep="\t")
     sys.stderr.write("True positive rate (%):\n")
