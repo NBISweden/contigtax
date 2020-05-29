@@ -64,8 +64,8 @@ def build(args):
 def run_diamond(args):
     """Runs diamond blastx against target database"""
     search.diamond(args.query, args.outfile, args.dbfile, args.mode, args.cpus,
-                   args.evalue, args.top, args.blocksize,
-                   args.chunks, args.tmpdir, args.minlen)
+                   args.evalue, args.top, args.blocksize, args.chunks,
+                   args.tmpdir, args.minlen, args.taxonmap)
 
 
 def assign_taxonomy(args):
@@ -80,11 +80,10 @@ def assign_taxonomy(args):
     sys.stderr.write("Assigning taxonomy with {} cpus\n".format(args.cpus))
     # Parse diamond file
     assign.parse_hits(args.diamond_results, args.outfile, args.taxidout,
-                      args.blobout, args.top, args.evalue,
-                      args.format, args.taxidmap, args.mode,
-                      args.vote_threshold, args.assignranks, args.reportranks,
-                      args.rank_thresholds, args.taxdir, args.sqlitedb,
-                      args.chunksize, args.cpus)
+                      args.blobout, args.top, args.evalue, args.format,
+                      args.taxidmap, args.mode, args.vote_threshold,
+                      args.assignranks, args.reportranks, args.rank_thresholds,
+                      args.taxdir, args.sqlitedb, args.chunksize, args.cpus)
     end_time = time()
     run_time = round(end_time - start_time, 1)
     sys.stderr.write("Total time: {}s\n".format(run_time))
@@ -136,9 +135,9 @@ def main():
     download_parser = subparser.add_parser("download",
                                            help="Download fasta file and NCBI "
                                                 "taxonomy files")
-    download_parser.add_argument("db", choices=["uniref100", "uniref90",
-                                                "uniref50", "nr", "taxonomy",
-                                                "idmap"],
+    download_parser.add_argument("db",
+                                 choices=["uniref100", "uniref90", "uniref50",
+                                          "nr", "taxonomy", "idmap"],
                                  default="uniref100", help="Database to "
                                                            "download. "
                                                            "Defaults to "
@@ -192,8 +191,7 @@ def main():
                                     "prot.accession2taxid.gz in the same "
                                     "directory as the reformatted fasta file. "
                                     "Specify another path here.")
-    format_parser.add_argument("--maxidlen", type=int, default=14,
-                               help="""Maximum allowed length of sequence
+    format_parser.add_argument("--maxidlen", type=int, default=14, help="""Maximum allowed length of sequence
                                ids. Defaults to 14 (required by diamond for
                                adding taxonomy info to database). Ids longer
                                than this are written to a file with the
@@ -212,8 +210,7 @@ def main():
     update_parser.add_argument("idfile", type=str,
                                help="File mapping long sequence ids to new"
                                     " ids")
-    update_parser.add_argument("newfile", type=str,
-                               help="Updated mapfile")
+    update_parser.add_argument("newfile", type=str, help="Updated mapfile")
     # Call update function with arguments
     update_parser.set_defaults(func=update)
     # Build parser
@@ -243,13 +240,10 @@ def main():
                                               "nucleotide fasta file")
     search_parser.add_argument("query", type=str,
                                help="Query contig nucleotide file")
-    search_parser.add_argument("dbfile", type=str,
-                               help="Diamond database file")
-    search_parser.add_argument("outfile", type=str,
-                               help="Diamond output file")
-    search_parser.add_argument("-m", "--mode", type=str, choices=["blastx",
-                                                                  "blastp"],
-                               default="blastx",
+    search_parser.add_argument("dbfile", type=str, help="Diamond database file")
+    search_parser.add_argument("outfile", type=str, help="Diamond output file")
+    search_parser.add_argument("-m", "--mode", type=str,
+                               choices=["blastx", "blastp"], default="blastx",
                                help="Choice of search mode for diamond: "
                                     "'blastx' (default) for DNA query "
                                     "sequences or "
@@ -275,6 +269,10 @@ def main():
                                     "search.")
     search_parser.add_argument("-t", "--tmpdir", type=str,
                                help="directory for temporary files")
+    search_parser.add_argument("--taxonmap", type=str,
+                               help="Protein accession to taxid mapfile (must "
+                                    "be gzipped). Only required for searching"
+                                    "if diamond version <0.9.19")
     search_parser.set_defaults(func=run_diamond)
     # Assign parser
     assign_parser = subparser.add_parser("assign",
@@ -286,10 +284,9 @@ def main():
     assign_parser_performance = assign_parser.add_argument_group("performance")
     assign_parser.add_argument("diamond_results", type=str,
                                help="Diamond blastx results")
-    assign_parser.add_argument("outfile", type=str,
-                               help="Output file")
-    assign_parser_input.add_argument("--format", type=str, choices=["tango",
-                                                                    "blast"],
+    assign_parser.add_argument("outfile", type=str, help="Output file")
+    assign_parser_input.add_argument("--format", type=str,
+                                     choices=["tango", "blast"],
                                      default="tango",
                                      help="Type of file format for diamond "
                                           "results. blast=blast tabular "
@@ -331,15 +328,13 @@ def main():
                                          "corresponding to percent identity "
                                          "of a hit.  Defaults to 45 (phylum), "
                                          "60 (genus) and 85 (species)")
-    assign_parser_mode.add_argument("--vote_threshold", default=0.5,
-                                    type=float,
+    assign_parser_mode.add_argument("--vote_threshold", default=0.5, type=float,
                                     help="Minimum fraction required when "
                                          "voting on rank assignments.")
     assign_parser_mode.add_argument("-T", "--top", type=int, default=5,
                                     help="Top percent of best score to "
                                          "consider hits for (default=5)")
-    assign_parser_mode.add_argument("-e", "--evalue", type=float,
-                                    default=0.001,
+    assign_parser_mode.add_argument("-e", "--evalue", type=float, default=0.001,
                                     help="Maximum e-value to store hits. "
                                          "Default 0.001")
     assign_parser_performance.add_argument("-p", "--cpus", type=int, default=1,

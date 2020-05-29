@@ -59,7 +59,8 @@ def filter_seqs_by_len(infile, outfile, minlen):
 
 
 def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, top=10,
-            blocksize=2.0, chunks=4, tmpdir=False, minlen=False):
+            blocksize=2.0, chunks=4, tmpdir=False,
+            minlen=False, taxonmap=None):
     """Runs diamond blast with query file
 
     This is a wrapper function for running diamond aligner in either blastx or
@@ -95,7 +96,16 @@ def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, top=10,
     minlen: int
         Minimum length for input sequences.
     """
-
+    from tango import diamond_legacy
+    if diamond_legacy():
+        if taxonmap is None:
+            sys.exit("ERROR: This diamond version requires you to supply"
+                     "a taxonmap file with "
+                     "--taxonmap at this stage")
+        else:
+            tmap_string = "--taxonmap {}".format(taxonmap)
+    else:
+        tmap_string = ""
     # Make sure that diamond database and query file exist
     check_args(dbfile, query)
     # Make sure tmpdir exists if specified
@@ -113,14 +123,14 @@ def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, top=10,
              "sstart send evalue bitscore staxids"
     p = subprocess.run("diamond {m} -q {q} -p {p} -f 6 {f} --top {top} -e {e} "
                        "-b {b} -c {c} --tmpdir {tmpdir} --more-sensitive "
-                       "--compress 1 -d {db} -o {out}".format(m=mode, q=query,
-                                                              p=cpus, f=outfmt,
-                                                              top=top, e=evalue,
-                                                              b=blocksize,
-                                                              c=chunks,
-                                                              out=outfile,
-                                                              db=dbfile,
-                                                              tmpdir=tmpdir),
+                       "--compress 1 -d {db} "
+                       "-o {out} {taxonmap}".format(m=mode, q=query,
+                                                    p=cpus, f=outfmt,
+                                                    top=top, e=evalue,
+                                                    b=blocksize, c=chunks,
+                                                    out=outfile, db=dbfile,
+                                                    tmpdir=tmpdir,
+                                                    taxonmap=tmap_string),
                        shell=True)
     p.check_returncode()
     if minlen:

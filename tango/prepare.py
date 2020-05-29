@@ -123,17 +123,22 @@ def build_diamond_db(fastafile, taxonmap, taxonnodes, dbfile, cpus=1):
     cpus: int
         number of cpus to use
     """
-
+    from tango import diamond_legacy
+    if diamond_legacy():
+        tmap_string = ""
+    else:
+        tmap_string = "--taxonmap {} --taxonnodes {}".format(taxonmap,
+                                                             taxonnodes)
     fastadir = dirname(fastafile)
     if not dbfile:
         dbfile = "{}/diamond.dmnd".format(fastadir)
     else:
         dbfile = dbfile
-    p = subprocess.run("gunzip -c {fastafile} | diamond makedb --taxonmap "
-                       "{taxonmap} --taxonnodes {taxonnodes} -d {dbfile} -p "
-                       "{cpus}".format(fastafile=fastafile, taxonmap=taxonmap,
-                                       taxonnodes=taxonnodes, dbfile=dbfile,
-                                       cpus=cpus), shell=True)
+    p = subprocess.run("diamond makedb --in {fastafile} {tmap}"
+                       " -d {dbfile} -p {cpus}".format(fastafile=fastafile,
+                                                       tmap=tmap_string,
+                                                       dbfile=dbfile,
+                                                       cpus=cpus), shell=True)
     p.check_returncode()
 
 
