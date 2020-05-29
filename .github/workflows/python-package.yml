@@ -50,6 +50,6 @@ jobs:
     - name: Build
       run: tango build -d uniref100.dmnd uniref100.reformat.fasta.gz uniref100.map.gz taxonomy/nodes.dmp
     - name: Search
-      run: tango search -p 4 tests/fixtures/shreds.fasta uniref100.dmnd shreds.tsv.gz
+      run: tango search --taxonmap uniref100.map.gz -p 4 tests/fixtures/shreds.fasta uniref100.dmnd shreds.tsv.gz
     - name: Assign
       run: tango assign --taxidout taxids.tsv -p 4  shreds.tsv.gz taxonomy.tsv
