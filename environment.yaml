@@ -5,7 +5,7 @@ channels:
   - defaults
 dependencies:
   - python
-  - diamond<=0.9.24
+  - diamond>=0.8.37, <=0.9.24
   - ete3
   - biopython
   - pandas
