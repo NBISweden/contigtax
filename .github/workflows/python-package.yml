@@ -57,3 +57,8 @@ jobs:
         tango build -d uniref100.dmnd uniref100.reformat.fasta.gz uniref100.map.gz taxonomy/nodes.dmp
         tango build -d uniref90.dmnd uniref90.reformat.fasta.gz uniref90.map.gz taxonomy/nodes.dmp
         tango build -d uniref50.dmnd uniref50.reformat.fasta.gz uniref50.map.gz taxonomy/nodes.dmp
+    - name: Search
+      run: |
+        tango search -p 4 tests/fixtures/queries.fasta uniref100.dmnd q100.tsv.gz
+        tango search -p 4 tests/fixtures/queries.fasta uniref90.dmnd q90.tsv.gz
+        tango search -p 4 tests/fixtures/queries.fasta uniref50.dmnd q50.tsv.gz
