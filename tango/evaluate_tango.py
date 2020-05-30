@@ -44,10 +44,10 @@ def main():
                                  "family", "genus", "species"])
     args = parser.parse_args()
     taxmap = read_taxfile(args.taxfile)
-    lineage_df = make_lineage_df(taxmap.taxid.unique(), args.taxdir,
-                                 args.dbname, args.ranks)
-    lineage_df.drop(args.ranks, axis=1, inplace=True)
-    lineage_df.rename(columns = lambda x: x.replace(".name",""), inplace=True)
+    taxids = [int(x) for x in taxmap.taxid.unique()]
+    lineage_df, name_dict = make_lineage_df(taxids=taxids, taxdir=args.taxdir,
+                                            dbname=args.dbname,
+                                            ranks=args.ranks)
     taxmap = pd.merge(taxmap, lineage_df, left_on="taxid", right_index=True,
                       how="left")
     eval_df = evaluate(args.infile, taxmap, args.ranks)
