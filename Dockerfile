@@ -1,7 +1,7 @@
 FROM continuumio/miniconda3:4.8.2
 
 LABEL maintainer="John Sundh" email=john.sundh@nbis.se
-LABEL description="Docker image python package tango"
+LABEL description="Docker image for python package tango"
 
 # Use bash as shell
 SHELL ["/bin/bash", "-c"]
