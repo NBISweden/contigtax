@@ -57,9 +57,9 @@ def get_thresholds(df, top=10):
     thresholds: dict
         Dictionary with queries as keys and bitscore thresholds as values
     """
-
-    thresholds = (df.sort_values("bitscore", ascending=False).groupby(
-        level=0).first().bitscore * ((100 - top)) / 100).to_dict()
+    sorted_df = df.sort_values("bitscore", ascending=False)
+    topscore = sorted_df.groupby(level=0).first().bitscore
+    thresholds = (topscore * ((100 - top)) / 100).to_dict()
     return thresholds
 
 
