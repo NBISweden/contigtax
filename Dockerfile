@@ -7,7 +7,7 @@ LABEL description="Docker image python package tango"
 SHELL ["/bin/bash", "-c"]
 
 # Set workdir
-WORKDIR /analysis
+WORKDIR /tango
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && apt-get clean
