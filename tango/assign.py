@@ -63,14 +63,6 @@ def get_thresholds(df, top=10):
     return thresholds
 
 
-def test_get_thresholds():
-    df = pd.DataFrame({'bitscore': [100, 90, 80]}, index=["contig1"] * 3)
-    thresholds10 = get_thresholds(df, top=10)
-    thresholds5 = get_thresholds(df, top=5)
-    assert thresholds10["contig1"] == 90
-    assert thresholds5["contig1"] == 95
-
-
 def get_rank_thresholds(ranks, thresholds):
     """
     Constructs dictionary of rank-specific thresholds
@@ -86,18 +78,11 @@ def get_rank_thresholds(ranks, thresholds):
     -------
         Dictionary of thresholds
     """
-
     t_len, r_len = len(thresholds), len(ranks)
     if t_len != r_len:
         sys.exit("ERROR: Number of taxonomic ranks ({}) and number of "
                  "thresholds ({}) differ\n".format(r_len, t_len))
     return dict(zip(ranks, thresholds))
-
-
-def test_get_rank_thresholds():
-    thresholds = get_rank_thresholds(["phylum", "genus", "species"],
-                                            [45, 60, 80])
-    assert thresholds["phylum"] == 45
 
 
 def add_names(x, taxid, ncbi_taxa):
@@ -297,18 +282,6 @@ def parse_with_rank_thresholds(r, assignranks, reportranks, rank_thresholds,
         if len(lca_taxids.keys()) > 0:
             return lca_taxids
     return {}
-
-
-def test_lca():
-    assignranks = ["phylum", "genus", "species"]
-    reportranks = ["phylum", "genus", "species"]
-    r = pd.DataFrame(
-        {"species": [1, 2, 3], "genus": [11, 11, 22],
-         "phylum": [111, 111, 111], "superkingdom": [2, 2, 2]},
-        index=["q1"] * 3)
-    lca = get_lca(r=r, assignranks=assignranks,
-                          reportranks=reportranks)
-    assert lca["phylum"] == 111
 
 
 def get_rank_vote(r, rank, vote_threshold=0.5):
