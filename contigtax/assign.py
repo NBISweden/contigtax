@@ -4,7 +4,7 @@ from multiprocessing import Pool
 import tqdm
 import sys
 import gzip as gz
-from tango.prepare import init_sqlite_taxdb
+from contigtax.prepare import init_sqlite_taxdb
 
 
 def translate_taxids_to_names(res_df, reportranks, name_dict):
@@ -191,7 +191,7 @@ def get_lca(r, assignranks, reportranks):
         a tuple of dictionaries with ranks as keys and taxa names/ids as values
 
     This function takes a query-slice of the diamond results after filtering
-    by score (and rank-threshold if tango mode is 'rank_lca' or 'rank_vote').
+    by score (and rank-threshold if contigtax mode is 'rank_lca' or 'rank_vote').
     It then iterates through each rank in reverse order checks how many
     unique taxids are found at that rank. If there's only one taxid
     """
@@ -413,7 +413,8 @@ def read_taxidmap(f, ids):
     return taxidmap, taxids
 
 
-def read_df(infile, top=10, e=0.001, input_format="tango", taxidmap=None):
+def read_df(infile, top=10, e=0.001, input_format="contigtax",
+            taxidmap=None):
     """
     Reads the blast results from file and returns a dictionary with
     query->results.
@@ -433,7 +434,7 @@ def read_df(infile, top=10, e=0.001, input_format="tango", taxidmap=None):
     e: float
         Maximum allowed e-value to keep a hit.
     input_format: str
-        Blast format. 'tango' if taxid for each subject is present in blast
+        Blast format. 'contigtax' if taxid for each subject is present in blast
         results, otherwise 'blast'
     taxidmap: str
         File mapping each subject id to a taxid
@@ -442,7 +443,7 @@ def read_df(infile, top=10, e=0.001, input_format="tango", taxidmap=None):
     -------
     tuple
         The function returns a tuple with dictionary of query->results and
-        unique taxonomy ids (if tango format) or unique subject ids
+        unique taxonomy ids (if contigtax format) or unique subject ids
     """
 
     open_function = open
@@ -464,7 +465,7 @@ def read_df(infile, top=10, e=0.001, input_format="tango", taxidmap=None):
                 queries[query] = {'min_score': min_score}
             if score < min_score or evalue > e:
                 continue
-            if input_format == "tango" and len(items) > 12:
+            if input_format == "contigtax" and len(items) > 12:
                 taxid = items[12]
                 # TODO: Is there a way to skip storing the same taxid from a
                 # worse hit for the same query?
@@ -486,7 +487,7 @@ def read_df(infile, top=10, e=0.001, input_format="tango", taxidmap=None):
         ids = list(set([r[key][i][0] for key in list(r.keys()) for i in
                         range(0, len(r[key]))]))
         return r, ids
-    # If this is tango format then return all taxids found
+    # If this is contigtax format then return all taxids found
     return r, list(set(taxids))
 
 
@@ -601,7 +602,7 @@ def make_lineage_df(taxids, taxdir, dbname, ranks, cpus=1):
         sys.stderr.write(
             "#To fix this, you can try to update the "
             "taxonomy database using\n")
-        sys.stderr.write("#tango download taxonomy --force\n")
+        sys.stderr.write("#contigtax download taxonomy --force\n")
     return lineage_df.loc[:, lineage_df.dtypes == int], name_dict
 
 
@@ -683,7 +684,7 @@ def write_blobout(f, res_taxids, queries, ranks):
                         break
 
 
-def stage_queries(res, lineage_df, input_format="tango", rank_thresholds=None,
+def stage_queries(res, lineage_df, input_format="contigtax", rank_thresholds=None,
                   top=10, mode="rank_lca", vote_threshold=0.5,
                   assignranks=None, reportranks=None, taxidmap=None):
     """
@@ -695,7 +696,7 @@ def stage_queries(res, lineage_df, input_format="tango", rank_thresholds=None,
     lineage_df: pandas.DataFrame
         Data frame of taxids and taxonomic information
     input_format: str
-        'tango' or 'blast'
+        'contigtax' or 'blast'
     rank_thresholds: list
         List of thresholds for ranks
     top: int
@@ -729,7 +730,7 @@ def stage_queries(res, lineage_df, input_format="tango", rank_thresholds=None,
     total_queries = len(res)
     for q in tqdm.tqdm(sorted(res.keys()), total=total_queries, unit=" queries",
                        ncols=100, desc="Staging queries"):
-        # If the diamond output does not have standard tango format we do
+        # If the diamond output does not have standard contigtax format we do
         # some work to add this information.
         item = [q, res[q], rank_thresholds, top, reportranks, assignranks, mode,
                 vote_threshold]
@@ -754,7 +755,7 @@ def stage_queries(res, lineage_df, input_format="tango", rank_thresholds=None,
 
 
 def parse_hits(diamond_results, outfile, taxidout=False, blobout=False, top=10,
-               evalue=0.001, input_format="tango", taxidmap=False,
+               evalue=0.001, input_format="contigtax", taxidmap=False,
                mode="rank_lca", vote_threshold=0.5, assignranks=None,
                reportranks=None, rank_thresholds=None, taxdir="./taxonomy/",
                sqlitedb="taxonomy.sqlite", chunksize=1, cpus=1):
@@ -788,11 +789,11 @@ def parse_hits(diamond_results, outfile, taxidout=False, blobout=False, top=10,
     evalue: float
         Filter hits with evalue larger than this
     input_format: str
-        'tango' or 'blast' depending on whether the diamond results has subject
+        'contigtax' or 'blast' depending on whether the diamond results has subject
         taxids in the last column or not
     taxidmap: str
         Path to a file mapping subject ids to taxids (needed if
-        input_format != 'tango')
+        input_format != 'contigtax')
     mode: str
         How to assign taxonomy: 'rank_lca' and 'rank_vote' use rank specific
         thresholds, 'score' only filters by bitscore

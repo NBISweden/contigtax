@@ -2,7 +2,7 @@
 
 import pandas as pd
 from argparse import ArgumentParser
-from tango.assign import make_lineage_df
+from contigtax.assign import make_lineage_df
 import sys
 
 
@@ -16,7 +16,7 @@ def evaluate(f, taxmap, ranks):
     Read taxonomy assignment file with taxids and compared to known
     taxonomy
 
-    :param f: Tango output (--taxidout) with taxids instead of names
+    :param f: contigtax output (--taxidout) with taxids instead of names
     :param taxmap: TSV file mapping query ids to taxids
     :param ranks: Ranks to evaluate
     :return: DataFrame with 0 (incorrect) or 1 (correct) assignment for
@@ -42,8 +42,8 @@ def evaluate(f, taxmap, ranks):
 def main():
     parser = ArgumentParser()
     parser.add_argument("infile", type=str,
-                        help="Tango assignment file with taxids (use "
-                             "--taxidout with tango assign)")
+                        help="contigtax assignment file with taxids (use "
+                             "--taxidout with contigtax assign)")
     parser.add_argument("taxfile", type=str,
                         help="File mapping sequence id to true taxonomy id")
     parser.add_argument("-t", "--taxdir", type=str, default="taxonomy",

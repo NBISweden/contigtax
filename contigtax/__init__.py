@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import pkg_resources  # part of setuptools
-__version__ = pkg_resources.require("tango")[0].version
+__version__ = pkg_resources.require("contigtax")[0].version
 
 
 def diamond_legacy():
@@ -21,5 +21,5 @@ def diamond_legacy():
     return False
 
 
-"""Main package for TANGO"""
-name = "tango"
+"""Main package for contigtax"""
+name = "contigtax"

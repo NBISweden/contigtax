@@ -1,4 +1,4 @@
-name: tango
+name: contigtax
 channels:
   - conda-forge
   - bioconda

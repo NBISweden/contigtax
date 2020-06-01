@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
 from argparse import ArgumentParser
-from tango import prepare
-from tango import search
-from tango import assign
-from tango import transfer
+from contigtax import prepare
+from contigtax import search
+from contigtax import assign
+from contigtax import transfer
 from time import time
 import sys
 import os
@@ -110,17 +110,17 @@ def transfer_taxonomy(args):
 
 
 def get_version():
-    from tango import __version__
+    from contigtax import __version__
     return '%(prog)s {version}'.format(version=__version__)
 
 
 def usage(args):
     if args.version:
-        import tango
-        print(tango.version)
+        import contigtax
+        print(contigtax.version)
     else:
         print("""
-        To print help message: tango -h
+        To print help message: contigtax -h
         """)
 
 
@@ -286,19 +286,19 @@ def main():
                                help="Diamond blastx results")
     assign_parser.add_argument("outfile", type=str, help="Output file")
     assign_parser_input.add_argument("--format", type=str,
-                                     choices=["tango", "blast"],
-                                     default="tango",
+                                     choices=["contigtax", "blast"],
+                                     default="contigtax",
                                      help="Type of file format for diamond "
                                           "results. blast=blast tabular "
-                                          "output, 'tango'=blast tabular "
+                                          "output, 'contigtax'=blast tabular "
                                           "output with taxid in 12th column"),
     assign_parser_input.add_argument("--taxidmap", type=str,
                                      help="Provide custom protein to taxid "
                                           "mapfile.")
     assign_parser_input.add_argument("-t", "--taxdir", type=str,
                                      default="./taxonomy",
-                                     help="Directory specified during 'tango "
-                                          "download taxonomy'. "
+                                     help="Directory specified during "
+                                          "'contigtax download taxonomy'. "
                                           "Defaults to taxonomy/.")
     assign_parser_input.add_argument("--sqlitedb", type=str,
                                      default="taxonomy.sqlite",

@@ -1,13 +1,13 @@
 FROM continuumio/miniconda3:4.8.2
 
 LABEL maintainer="John Sundh" email=john.sundh@nbis.se
-LABEL description="Docker image for python package tango"
+LABEL description="Docker image for python package contigtax"
 
 # Use bash as shell
 SHELL ["/bin/bash", "-c"]
 
 # Set workdir
-WORKDIR /tango
+WORKDIR /work
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && apt-get clean

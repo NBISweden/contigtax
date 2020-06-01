@@ -1,6 +1,3 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
-
 name: CI
 
 on:
@@ -27,7 +24,7 @@ jobs:
         pip install -r requirements.txt
         python -m pip install .
     - name: Download taxonomy
-      run: tango download taxonomy
+      run: contigtax download taxonomy
     - name: Upload taxonomy
       uses: actions/upload-artifact@v1
       with:
@@ -68,21 +65,21 @@ jobs:
     - name: Format fasta
       run: |
         gzip -c tests/data/uniref100.fasta > uniref100.fasta.gz
-        tango format -m uniref100.map.gz uniref100.fasta.gz uniref100.reformat.fasta.gz
+        contigtax format -m uniref100.map.gz uniref100.fasta.gz uniref100.reformat.fasta.gz
     - name: Download taxonomy
       uses: actions/download-artifact@v1
       with:
         name: taxonomy
     - name: Build
-      run: tango build -d uniref100.dmnd uniref100.reformat.fasta.gz uniref100.map.gz taxonomy/nodes.dmp
+      run: contigtax build -d uniref100.dmnd uniref100.reformat.fasta.gz uniref100.map.gz taxonomy/nodes.dmp
     - name: Search
-      run: tango search --taxonmap uniref100.map.gz -p 4 tests/data/shreds.fasta uniref100.dmnd shreds.tsv.gz
+      run: contigtax search --taxonmap uniref100.map.gz -p 4 tests/data/shreds.fasta uniref100.dmnd shreds.tsv.gz
     - name: Assign
-      run: tango assign --taxidout taxids.tsv -p 4  shreds.tsv.gz taxonomy.tsv
+      run: contigtax assign --taxidout taxids.tsv -p 4  shreds.tsv.gz taxonomy.tsv
     - name: Evaluate
       run: |
         mkdir -p ${{ github.workspace }}/${{ matrix.python-version }}/evaluate
-        evaluate_tango.py taxids.tsv tests/data/shreds.taxids.tsv >${{ github.workspace }}/${{ matrix.python-version }}/evaluate/eval.tsv 2>${{ github.workspace }}/${{ matrix.python-version }}/evaluate/eval.log
+        evaluate_contigtax.py taxids.tsv tests/data/shreds.taxids.tsv >${{ github.workspace }}/${{ matrix.python-version }}/evaluate/eval.tsv 2>${{ github.workspace }}/${{ matrix.python-version }}/evaluate/eval.log
     - name: Archive evaluation results
       uses: actions/upload-artifact@v1
       with:
