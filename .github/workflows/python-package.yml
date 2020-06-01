@@ -54,4 +54,9 @@ jobs:
     - name: Assign
       run: tango assign --taxidout taxids.tsv -p 4  shreds.tsv.gz taxonomy.tsv
     - name: Evaluate
-      run: evaluate_tango.py taxids.tsv tests/data/shreds.taxids.tsv > eval.tsv
+      run: evaluate_tango.py taxids.tsv tests/data/shreds.taxids.tsv > eval.tsv 2>eval.log.txt
+    - name: Archive evaluation results
+      uses: actions/upload-artifact@v1
+      with:
+        name: evaluation-result
+        path: eval.*
