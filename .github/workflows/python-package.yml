@@ -83,5 +83,5 @@ jobs:
     - name: Archive evaluation results
       uses: actions/upload-artifact@v1
       with:
-        name: evaluation
+        name: python-${{ matrix.python-version }}-eval
         path: ${{ github.workspace }}/${{ matrix.python-version }}/evaluate
