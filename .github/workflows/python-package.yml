@@ -78,10 +78,10 @@ jobs:
       run: tango assign --taxidout taxids.tsv -p 4  shreds.tsv.gz taxonomy.tsv
     - name: Evaluate
       run: |
-        mkdir -p ${{ github.workspace }}/${{ github.matrix.python-version }}/evaluate
-        evaluate_tango.py taxids.tsv tests/data/shreds.taxids.tsv >${{ github.workspace }}/${{ github.matrix.python-version }}/evaluate/eval.tsv 2>${{ github.workspace }}/${{ github.matrix.python-version }}/evaluate/eval.log
+        mkdir -p ${{ github.workspace }}/${{ matrix.python-version }}/evaluate
+        evaluate_tango.py taxids.tsv tests/data/shreds.taxids.tsv >${{ github.workspace }}/${{ matrix.python-version }}/evaluate/eval.tsv 2>${{ github.workspace }}/${{ matrix.python-version }}/evaluate/eval.log
     - name: Archive evaluation results
       uses: actions/upload-artifact@v1
       with:
         name: evaluation
-        path: ${{ github.workspace }}/${{ github.matrix.python-version }}/evaluate/eval*
+        path: ${{ github.workspace }}/${{ matrix.python-version }}/evaluate/eval*
