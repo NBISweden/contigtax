@@ -8,6 +8,17 @@ and parses hits using rank-specific thresholds. The use of rank-specific
  thresholds was first introduced by [Luo et al 2014](https://academic.oup.com/nar/article/42/8/e73/1076763)
  and used with some modification as explained in [Alneberg et al 2018](https://www.nature.com/articles/sdata2018146).
 
+## Install
+Simplest way to install `tango` is via conda:
+```bash
+conda install -c bioconda tango
+```
+
+Alternatively, pull the docker image:
+```bash
+docker pull nbisweden/tango
+```
+
 ## Usage
 
 1. Download fasta file
@@ -38,4 +49,39 @@ tango search -p 4 assembly.fa uniref100/diamond.dmnd assembly.tsv.gz
 6. Assign
 ```
 tango assign -p 4 assembly.tsv.gz assembly.taxonomy.tsv
+```
+
+### Running tango with Docker
+
+To run tango with docker simply substitute tango in the commands above with
+`docker run --rm -v $(pwd):/tango nbisweden/tango`, _e.g._:
+
+1. Download fasta file 
+```
+docker run --rm -v $(pwd):/tango nbisweden/tango download uniref100
+```
+
+2. Download NCBI taxonomy
+```
+docker run --rm -v $(pwd):/tango nbisweden/tango download taxonomy
+```
+
+3. Reformat fasta file and create taxonmap
+```
+docker run --rm -v $(pwd):/tango nbisweden/tango format uniref100/uniref100.fasta.gz uniref100/uniref100.reformat.fasta.gz
+```
+
+4. Build diamond database
+```
+docker run --rm -v $(pwd):/tango nbisweden/tango build uniref100/uniref100.reformat.fasta.gz uniref100/prot.accession2taxid.gz taxonomy/nodes.dmp
+```
+
+5. Search
+```
+docker run --rm -v $(pwd):/tango nbisweden/tango search -p 4 assembly.fa uniref100/diamond.dmnd assembly.tsv.gz
+```
+
+6. Assign
+```
+docker run --rm -v $(pwd):/tango nbisweden/tango assign -p 4 assembly.tsv.gz assembly.taxonomy.tsv
 ```
