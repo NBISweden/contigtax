@@ -116,14 +116,14 @@ def build_diamond_db(fastafile, taxonmap, taxonnodes, dbfile, cpus=1):
     taxonmap: str
         File mapping protein ids to taxids
     taxonnodes: str
-        nodes.dmp file from NCBI taxonomy ftp (download with tango download
+        nodes.dmp file from NCBI taxonomy ftp (download with contigtax download
         taxonomy
     dbfile: str
         diamond database to create
     cpus: int
         number of cpus to use
     """
-    from tango import diamond_legacy
+    from contigtax import diamond_legacy
     if diamond_legacy():
         tmap_string = ""
     else:
@@ -556,5 +556,5 @@ def format_fasta(fastafile, reformatted, tmpdir=False, force=False,
         if not uniref:
             sys.stderr.write(
                 ">>>Make sure to update your prot.accession2taxid.gz file "
-                "with updated ids. See 'tango update'<<<\n")
+                "with updated ids. See 'contigtax update'<<<\n")
     return 0

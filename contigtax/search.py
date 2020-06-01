@@ -96,7 +96,7 @@ def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, top=10,
     minlen: int
         Minimum length for input sequences.
     """
-    from tango import diamond_legacy
+    from contigtax import diamond_legacy
     if diamond_legacy():
         if taxonmap is None:
             sys.exit("ERROR: This diamond version requires you to supply"

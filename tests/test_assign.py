@@ -1,6 +1,6 @@
 import pytest
 import pandas as pd
-from tango.assign import (get_rank_thresholds, get_lca, get_thresholds,
+from contigtax.assign import (get_rank_thresholds, get_lca, get_thresholds,
                           propagate_taxids, propagate_lower)
 
 

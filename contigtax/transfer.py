@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import pandas as pd
-from tango.assign import series2df
+from contigtax.assign import series2df
 from multiprocessing import Pool
 import tqdm
 import sys
@@ -67,7 +67,7 @@ def transfer_taxonomy(df, gff, ignore_unc_rank=None, cpus=1, chunksize=1,
     Parameters
     ----------
     df: pandas.DataFrame
-        Taxonomy dataframe from tango assign
+        Taxonomy dataframe from contigtax assign
     gff: str
         GFF file or tsv file mapping contigs to ORFs
     ignore_unc_rank: bool
