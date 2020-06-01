@@ -8,7 +8,8 @@ from tempfile import NamedTemporaryFile as ntf
 def check_args(dbfile, query):
     """Checks that diamond database and query file exist"""
     if not os.path.exists(dbfile):
-        sys.stderr.write("ERROR: Diamond database {} does not exist\n".format(dbfile))
+        sys.stderr.write(
+            "ERROR: Diamond database {} does not exist\n".format(dbfile))
         sys.exit()
     if not os.path.exists(query):
         sys.stderr.write("ERROR: Query file {} does not exist\n".format(query))
@@ -47,19 +48,25 @@ def filter_seqs_by_len(infile, outfile, minlen):
     from Bio.SeqIO import parse, write
     i = 0
     with open(outfile, 'w') as fh:
-        for record in tqdm.tqdm(parse(infile, 'fasta'), unit=" sequences", ncols=100, desc="Filtering sequences"):
+        for record in tqdm.tqdm(parse(infile, 'fasta'), unit=" sequences",
+                                ncols=100, desc="Filtering sequences"):
             if len(record) >= minlen:
                 write(record, fh, "fasta")
                 i += 1
-    sys.stderr.write("{} sequences longer than {} written to {}\n".format(i, minlen, outfile))
+    sys.stderr.write(
+        "{} sequences longer than {} written to {}\n".format(i, minlen,
+                                                             outfile))
 
 
-def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, top=10, blocksize=2.0, chunks=4,
-            tmpdir=False, minlen=False):
+def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, top=10,
+            blocksize=2.0, chunks=4, tmpdir=False,
+            minlen=False, taxonmap=None):
     """Runs diamond blast with query file
 
-    This is a wrapper function for running diamond aligner in either blastx or blastp mode (default is blastx). Some
-    initial checks on input is performed as well as optional filtering of input sequences by length.
+    This is a wrapper function for running diamond aligner in either blastx or
+    blastp mode (default is blastx). Some
+    initial checks on input is performed as well as optional filtering of input
+    sequences by length.
 
     Parameters
     ----------
@@ -78,16 +85,27 @@ def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, top=10,
     top: int
         Keep hits within top percent of best scoring hit
     blocksize: float
-        Sequence block size in billions of letters (default=2.0). Set to 20 on clusters.
+        Sequence block size in billions of letters (default=2.0).
+        Set to 20 on clusters.
     chunks: int
-        Number of chunks for index processing (default=4). Setting to one will shorten runtime but increase memory
+        Number of chunks for index processing (default=4). Setting to one
+        will shorten runtime but increase memory
         requirements.
     tmpdir: str
         Temporary directory for output
     minlen: int
         Minimum length for input sequences.
     """
-
+    from tango import diamond_legacy
+    if diamond_legacy():
+        if taxonmap is None:
+            sys.exit("ERROR: This diamond version requires you to supply"
+                     "a taxonmap file with "
+                     "--taxonmap at this stage")
+        else:
+            tmap_string = "--taxonmap {}".format(taxonmap)
+    else:
+        tmap_string = ""
     # Make sure that diamond database and query file exist
     check_args(dbfile, query)
     # Make sure tmpdir exists if specified
@@ -101,22 +119,22 @@ def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, top=10,
         query = q.name
     outfile = str(outfile).replace(".gz", "")
     # Use blast tabular output with taxonomy id in last column
-    outfmt = "qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids"
-    status = subprocess.run('diamond {m} -q {q} -p {p} -f 6 {f} --top {top} -e {e} -b {b} -c {c} --tmpdir {tmpdir} \
-                   --more-sensitive --compress 1 -d {db} -o {out}'.format(m=mode,
-                                                                          q=query,
-                                                                          p=cpus,
-                                                                          f=outfmt,
-                                                                          top=top,
-                                                                          e=evalue,
-                                                                          b=blocksize,
-                                                                          c=chunks,
-                                                                          out=outfile,
-                                                                          db=dbfile,
-                                                                          tmpdir=tmpdir),
-                            shell=True)
+    outfmt = "qseqid sseqid pident length mismatch gapopen qstart qend " \
+             "sstart send evalue bitscore staxids"
+    p = subprocess.run("diamond {m} -q {q} -p {p} -f 6 {f} --top {top} -e {e} "
+                       "-b {b} -c {c} --tmpdir {tmpdir} --more-sensitive "
+                       "--compress 1 -d {db} "
+                       "-o {out} {taxonmap}".format(m=mode, q=query,
+                                                    p=cpus, f=outfmt,
+                                                    top=top, e=evalue,
+                                                    b=blocksize, c=chunks,
+                                                    out=outfile, db=dbfile,
+                                                    tmpdir=tmpdir,
+                                                    taxonmap=tmap_string),
+                       shell=True)
+    p.check_returncode()
     if minlen:
         sys.stderr.write("Removing temporary file {}\n".format(q.name))
         q.close()
         os.remove(q.name)
-    return status.returncode
+    return

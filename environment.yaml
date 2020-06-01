@@ -1,9 +1,11 @@
 name: tango
 channels:
+  - conda-forge
   - bioconda
+  - defaults
 dependencies:
-  - python=3.5
-  - diamond
+  - python
+  - diamond>=0.8.37, <=0.9.24
   - ete3
   - biopython
   - pandas

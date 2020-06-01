@@ -1,0 +1,6 @@
+pandas
+numpy
+tqdm
+ete3
+setuptools
+biopython
