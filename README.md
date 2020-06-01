@@ -76,12 +76,12 @@ docker run --rm -v $(pwd):/tango nbisweden/tango format uniref100/uniref100.fast
 docker run --rm -v $(pwd):/tango nbisweden/tango build uniref100/uniref100.reformat.fasta.gz uniref100/prot.accession2taxid.gz taxonomy/nodes.dmp
 ```
 
-5. Search
+5. Search (here assembled contigs are in file `assembly.fa`)
 ```
 docker run --rm -v $(pwd):/tango nbisweden/tango search -p 4 assembly.fa uniref100/diamond.dmnd assembly.tsv.gz
 ```
 
-6. Assign
+6. Assign (here output from the `tango search` step are in file `assembly.tsv.gz`)
 ```
 docker run --rm -v $(pwd):/tango nbisweden/tango assign -p 4 assembly.tsv.gz assembly.taxonomy.tsv
 ```
