@@ -41,12 +41,12 @@ tango format uniref100/uniref100.fasta.gz uniref100/uniref100.reformat.fasta.gz
 tango build uniref100/uniref100.reformat.fasta.gz uniref100/prot.accession2taxid.gz taxonomy/nodes.dmp
 ```
 
-5. Search
+5. Search (here assembled contigs are in file `assembly.fa`)
 ```
 tango search -p 4 assembly.fa uniref100/diamond.dmnd assembly.tsv.gz
 ```
 
-6. Assign
+6. Assign (here output from the `tango search` step are in file `assembly.tsv.gz`)
 ```
 tango assign -p 4 assembly.tsv.gz assembly.taxonomy.tsv
 ```
