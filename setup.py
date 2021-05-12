@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="contigtax",
-    version="0.5.9",
+    version="0.5.10",
     author="John Sundh",
     author_email="john.sundh@scilifelab.se",
     description="A package to assign taxonomy to metagenomic contigs",
