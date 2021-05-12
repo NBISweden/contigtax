@@ -4,7 +4,7 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - python>=3.5
+  - python>=3.6
   - diamond>=0.8.37, <=0.9.24
   - ete3
   - biopython
