@@ -172,6 +172,33 @@ def propagate_lower(x, taxid, ranks):
                     right_index=True)
 
 
+def unique_cols(x):
+    """
+    Checks the columns for a taxid entry and only returns unique indices
+    This is meant to fix the problem of some taxids having multiple entries
+    for the same taxonomic rank.
+
+    Example: Alouatta palliata mexicana (Howler monkey)
+    taxid = 182248
+            superkingdom phylum order genus species  class  family    class
+            2759         7711   9443  9499  30589    40674  378855    1338369
+
+    This function would return indices for columns to use with 'iloc' in order
+    to get:
+            superkingdom phylum order genus species  class  family
+            2759         7711   9443  9499  30589    40674  378855
+    :param x:
+    :return:
+    """
+    col_index = []
+    cols = []
+    for i, c in enumerate(x.columns):
+        if c not in cols:
+            cols.append(c)
+            col_index.append(i)
+    return col_index
+
+
 def get_lca(r, assignranks, reportranks):
     """
     Assign lowest common ancestor from a set of taxids.
@@ -508,6 +535,8 @@ def process_lineages(items):
     x.columns = x.loc["rank"]
     x.drop("rank", inplace=True)
     x.index = [taxid]
+    # Only select unique columns
+    x = x.iloc[:, unique_cols(x)]
     # Add taxids for lower ranks in the hierarchy
     x = propagate_lower(x, taxid, ranks)
     # Add names for taxids
@@ -542,6 +571,15 @@ def make_name_dict(df, ranks):
     name_dict[-1] = "Unclassified"
     return name_dict
 
+
+def exit_no_info(taxdir):
+    sys.exit(f"""
+ERROR: No taxonomic information found in the database at {taxdir} 
+This may be caused by an out-of-date or incomplete taxonomy database.
+Try running:
+contigtax download taxonomy -f -t {taxdir}
+to force an update.
+            """)
 
 def make_lineage_df(taxids, taxdir, dbname, ranks, cpus=1):
     """
@@ -583,6 +621,8 @@ def make_lineage_df(taxids, taxdir, dbname, ranks, cpus=1):
     rename = {y: x for x, y in translate_dict.items()}
     # Update lineages with missing taxids
     lineages.update(ncbi_taxa.get_lineage_translator(translate_dict.values()))
+    if len(lineages.keys()) == 0:
+        exit_no_info(taxdir)
     items = [[taxid, ranks, taxdir, dbname, lineages[taxid]] for taxid in
              list(lineages.keys())]
     with Pool(processes=cpus) as pool:
