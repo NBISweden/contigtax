@@ -18,7 +18,7 @@ COPY environment.yaml .
 # Install environment into base
 RUN conda env update -n base -f environment.yaml && conda clean -a
 
-# Install tango
+# Install contigtax
 COPY contigtax contigtax
 COPY requirements.txt .
 COPY setup.py .
