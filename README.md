@@ -2,8 +2,8 @@
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat-square)](http://bioconda.github.io/recipes/contigtax/README.html) 
 ![dependencies](https://img.shields.io/conda/pn/bioconda/contigtax.svg) 
 ![Docker](https://img.shields.io/docker/pulls/nbisweden/contigtax)
-![update history](https://img.shields.io/github/last-commit/NBISweden/contigtax/master.svg) 
-![CI](https://github.com/NBISweden/contigtax/workflows/CI/badge.svg?branch=master)
+![update history](https://img.shields.io/github/last-commit/NBISweden/contigtax/main.svg) 
+![CI](https://github.com/NBISweden/contigtax/workflows/CI/badge.svg?branch=main)
 
 contigtax is a tool that assigns taxonomy to metagenomic contigs by querying 
 contig nucleotide sequences against a protein database using `diamond blastx` 
