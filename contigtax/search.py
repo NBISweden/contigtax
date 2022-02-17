@@ -99,9 +99,10 @@ def diamond(query, outfile, dbfile, mode="blastx", cpus=1, evalue=0.001, top=10,
     from contigtax import diamond_legacy
     if diamond_legacy():
         if taxonmap is None:
+            dbdir = os.path.dirname(dbfile)
             sys.exit("ERROR: This diamond version requires you to supply"
-                     "a taxonmap file with "
-                     "--taxonmap at this stage")
+                     "a taxonmap file with e.g."
+                     f"--taxonmap {dbdir}/prot.accession2taxid.gz at this stage")
         else:
             tmap_string = "--taxonmap {}".format(taxonmap)
     else:
