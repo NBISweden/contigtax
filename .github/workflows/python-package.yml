@@ -67,7 +67,7 @@ jobs:
         gzip -c tests/data/uniref100.fasta > uniref100.fasta.gz
         contigtax format -m uniref100.map.gz uniref100.fasta.gz uniref100.reformat.fasta.gz
     - name: Download taxonomy
-      uses: actions/download-artifact@v1
+      uses: actions/download-artifact@v4.1.7
       with:
         name: taxonomy
     - name: Build
